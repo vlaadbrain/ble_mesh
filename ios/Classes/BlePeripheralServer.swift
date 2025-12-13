@@ -7,8 +7,7 @@ class BlePeripheralServer: NSObject {
 
     private var peripheralManager: CBPeripheralManager?
     private var meshService: CBMutableService?
-    private var txCharacteristic: CBMutableCharacteristic?
-    private var rxCharacteristic: CBMutableCharacteristic?
+    private var msgCharacteristic: CBMutableCharacteristic?
     private var controlCharacteristic: CBMutableCharacteristic?
 
     private var connectedCentrals = Set<CBCentral>()
@@ -56,8 +55,8 @@ class BlePeripheralServer: NSObject {
     /// Send notification to a connected central
     func sendNotification(to central: CBCentral, data: Data) -> Bool {
         guard let peripheralManager = peripheralManager,
-              let rxCharacteristic = rxCharacteristic else {
-            print("[\(tag)] Peripheral manager or RX characteristic not available")
+              let msgCharacteristic = msgCharacteristic else {
+            print("[\(tag)] Peripheral manager or MSG characteristic not available")
             return false
         }
 
@@ -66,7 +65,7 @@ class BlePeripheralServer: NSObject {
             return false
         }
 
-        let success = peripheralManager.updateValue(data, for: rxCharacteristic, onSubscribedCentrals: [central])
+        let success = peripheralManager.updateValue(data, for: msgCharacteristic, onSubscribedCentrals: [central])
 
         if success {
             print("[\(tag)] Sent notification to central, size: \(data.count) bytes")
@@ -80,8 +79,8 @@ class BlePeripheralServer: NSObject {
     /// Send notification to all subscribed centrals
     func sendNotificationToAll(data: Data) -> Bool {
         guard let peripheralManager = peripheralManager,
-              let rxCharacteristic = rxCharacteristic else {
-            print("[\(tag)] Peripheral manager or RX characteristic not available")
+              let msgCharacteristic = msgCharacteristic else {
+            print("[\(tag)] Peripheral manager or MSG characteristic not available")
             return false
         }
 
@@ -90,7 +89,7 @@ class BlePeripheralServer: NSObject {
             return false
         }
 
-        let success = peripheralManager.updateValue(data, for: rxCharacteristic, onSubscribedCentrals: Array(subscribedCentrals))
+        let success = peripheralManager.updateValue(data, for: msgCharacteristic, onSubscribedCentrals: Array(subscribedCentrals))
 
         if success {
             print("[\(tag)] Sent notification to \(subscribedCentrals.count) centrals")
@@ -106,22 +105,14 @@ class BlePeripheralServer: NSObject {
         return Array(connectedCentrals)
     }
 
-    /// Create the mesh service with TX and RX characteristics
+    /// Create the mesh service with MSG characteristics
     private func createMeshService() {
-        // Create TX characteristic (central writes to this)
-        txCharacteristic = CBMutableCharacteristic(
-            type: BleConstants.txCharacteristicUUID,
-            properties: [.write, .writeWithoutResponse],
+        // Create MSG characteristic (central writes/reads/subscribes to this)
+        msgCharacteristic = CBMutableCharacteristic(
+            type: BleConstants.msgCharacteristicUUID,
+            properties: [.write, .writeWithoutResponse, .read, .notify],
             value: nil,
-            permissions: [.writeable]
-        )
-
-        // Create RX characteristic (central reads/subscribes to this)
-        rxCharacteristic = CBMutableCharacteristic(
-            type: BleConstants.rxCharacteristicUUID,
-            properties: [.read, .notify],
-            value: nil,
-            permissions: [.readable]
+            permissions: [.writeable, .readable]
         )
 
         // Create control characteristic (for future use)
@@ -135,12 +126,11 @@ class BlePeripheralServer: NSObject {
         // Create the service
         meshService = CBMutableService(type: BleConstants.meshServiceUUID, primary: true)
         meshService?.characteristics = [
-            txCharacteristic!,
-            rxCharacteristic!,
+            msgCharacteristic!,
             controlCharacteristic!
         ]
 
-        print("[\(tag)] Created mesh service with TX, RX, and Control characteristics")
+        print("[\(tag)] Created mesh service with MSG and Control characteristics")
     }
 
     /// Add the service to the peripheral manager
@@ -205,10 +195,10 @@ extension BlePeripheralServer: CBPeripheralManagerDelegate {
     func peripheralManager(_ peripheral: CBPeripheralManager, central: CBCentral, didSubscribeTo characteristic: CBCharacteristic) {
         print("[\(tag)] Central subscribed to characteristic: \(characteristic.uuid)")
 
-        if characteristic.uuid == BleConstants.rxCharacteristicUUID {
+        if characteristic.uuid == BleConstants.msgCharacteristicUUID {
             subscribedCentrals.insert(central)
             connectedCentrals.insert(central)
-            print("[\(tag)] Central \(central.identifier) subscribed to RX notifications")
+            print("[\(tag)] Central \(central.identifier) subscribed to MSG notifications")
             onCentralConnected?(central)
         }
     }
@@ -216,17 +206,17 @@ extension BlePeripheralServer: CBPeripheralManagerDelegate {
     func peripheralManager(_ peripheral: CBPeripheralManager, central: CBCentral, didUnsubscribeFrom characteristic: CBCharacteristic) {
         print("[\(tag)] Central unsubscribed from characteristic: \(characteristic.uuid)")
 
-        if characteristic.uuid == BleConstants.rxCharacteristicUUID {
+        if characteristic.uuid == BleConstants.msgCharacteristicUUID {
             subscribedCentrals.remove(central)
-            print("[\(tag)] Central \(central.identifier) unsubscribed from RX notifications")
+            print("[\(tag)] Central \(central.identifier) unsubscribed from MSG notifications")
         }
     }
 
     func peripheralManager(_ peripheral: CBPeripheralManager, didReceiveRead request: CBATTRequest) {
         print("[\(tag)] Received read request for characteristic: \(request.characteristic.uuid)")
 
-        if request.characteristic.uuid == BleConstants.rxCharacteristicUUID {
-            // Handle RX characteristic read
+        if request.characteristic.uuid == BleConstants.msgCharacteristicUUID {
+            // Handle MSG characteristic read
             if let data = onCharacteristicReadRequest?(request.central) {
                 if request.offset > data.count {
                     peripheral.respond(to: request, withResult: .invalidOffset)
@@ -253,8 +243,8 @@ extension BlePeripheralServer: CBPeripheralManagerDelegate {
         print("[\(tag)] Received \(requests.count) write request(s)")
 
         for request in requests {
-            if request.characteristic.uuid == BleConstants.txCharacteristicUUID {
-                // Handle TX characteristic write (message from central)
+            if request.characteristic.uuid == BleConstants.msgCharacteristicUUID {
+                // Handle MSG characteristic write (message from central)
                 if let value = request.value {
                     print("[\(tag)] Received data from central: \(value.count) bytes")
                     onCharacteristicWriteRequest?(request.central, value)

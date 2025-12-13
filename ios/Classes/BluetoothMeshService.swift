@@ -153,11 +153,11 @@ class BluetoothMeshService {
         // Send to all connected peers
         connectedPeripherals.forEach { identifier in
             if let peripheral = connectionManager.getConnectedPeripheral(identifier),
-               let txCharacteristic = serviceManager.findTxCharacteristic(peripheral) {
-                _ = serviceManager.writeCharacteristic(peripheral, characteristic: txCharacteristic, data: messageData)
+               let msgCharacteristic = serviceManager.findMsgCharacteristic(peripheral) {
+                _ = serviceManager.writeCharacteristic(peripheral, characteristic: msgCharacteristic, data: messageData)
                 print("[\(tag)] Sent message to peer: \(identifier)")
             } else {
-                print("[\(tag)] TX characteristic not found for peer: \(identifier)")
+                print("[\(tag)] MSG characteristic not found for peer: \(identifier)")
             }
         }
     }
@@ -245,14 +245,14 @@ class BluetoothMeshService {
             guard let self = self else { return }
             print("[\(self.tag)] Services discovered for peripheral: \(identifier)")
 
-            // Setup notifications for RX characteristic
-            if let rxCharacteristic = self.serviceManager.findRxCharacteristic(peripheral) {
-                if self.serviceManager.supportsNotifications(rxCharacteristic) {
-                    _ = self.serviceManager.setupNotifications(peripheral, characteristic: rxCharacteristic)
-                    print("[\(self.tag)] Setup notifications for RX characteristic")
+            // Setup notifications for MSG characteristic
+            if let msgCharacteristic = self.serviceManager.findMsgCharacteristic(peripheral) {
+                if self.serviceManager.supportsNotifications(msgCharacteristic) {
+                    _ = self.serviceManager.setupNotifications(peripheral, characteristic: msgCharacteristic)
+                    print("[\(self.tag)] Setup notifications for MSG characteristic")
                 }
             } else {
-                print("[\(self.tag)] RX characteristic not found for peripheral: \(identifier)")
+                print("[\(self.tag)] MSG characteristic not found for peripheral: \(identifier)")
             }
         }
 
@@ -261,7 +261,7 @@ class BluetoothMeshService {
             print("[\(self.tag)] Characteristic value updated: \(uuid), size: \(data.count)")
 
             // Handle received message
-            if uuid == BleConstants.rxCharacteristicUUID {
+            if uuid == BleConstants.msgCharacteristicUUID {
                 if let content = String(data: data, encoding: .utf8) {
                     print("[\(self.tag)] Received message from \(identifier): \(content)")
 

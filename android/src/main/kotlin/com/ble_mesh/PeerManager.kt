@@ -129,7 +129,7 @@ class PeerManager {
     /**
      * Remove stale peers (not seen for a while)
      */
-    fun removeStalesPeers(timeoutMs: Long = 60000L) {
+    fun removeStalePeers(timeoutMs: Long = 60000L) {
         val currentTime = System.currentTimeMillis()
         val stalePeers = discoveredPeers.filter { (_, peer) ->
             !peer.isConnected && (currentTime - peer.lastSeen) > timeoutMs

@@ -242,8 +242,7 @@ extension BleConnectionManager: CBPeripheralDelegate {
         // Discover characteristics for mesh service
         if let service = peripheral.services?.first(where: { $0.uuid == BleConstants.meshServiceUUID }) {
             peripheral.discoverCharacteristics([
-                BleConstants.txCharacteristicUUID,
-                BleConstants.rxCharacteristicUUID,
+                BleConstants.msgCharacteristicUUID,
                 BleConstants.controlCharacteristicUUID
             ], for: service)
         }

@@ -379,7 +379,7 @@ class BluetoothMeshService(private val context: Context) {
         handler.postDelayed(object : Runnable {
             override fun run() {
                 if (isRunning) {
-                    peerManager.removeStalesPeers()
+                    peerManager.removeStalePeers()
                 }
                 handler.postDelayed(this, 30000L) // Every 30 seconds
             }

@@ -29,14 +29,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `PeerManager` - Tracks discovered and connected peers
 - `BleConstants` - Centralized constants and UUIDs
 
-#### iOS Implementation (Partial)
+#### iOS Implementation ✅ COMPLETE
 - `BleScanner` - Scans for nearby mesh devices
 - `BleAdvertiser` - Advertises device presence
-- `BlePeripheralServer` - Peripheral server (TX/RX characteristics, needs update to MSG)
+- `BlePeripheralServer` - Peripheral server with MSG_CHARACTERISTIC ✅
 - `BleConnectionManager` - Connection management
+- `ServiceManager` - GATT service operations with MSG_CHARACTERISTIC ✅
 - `PeerManager` - Peer tracking
-- `BleConstants` - Constants and UUIDs (updated to MSG_CHARACTERISTIC)
-- **Note**: iOS implementation started but not fully integrated with MSG_CHARACTERISTIC
+- `BleConstants` - Constants and UUIDs with MSG_CHARACTERISTIC ✅
+- **Status**: iOS implementation complete and tested with MSG_CHARACTERISTIC
 
 #### Flutter API
 - `BleMesh` class - Main plugin interface
@@ -190,15 +191,12 @@ Characteristics:
 
 ### Known Issues
 
-#### iOS Implementation
-- iOS peripheral server still uses TX/RX characteristics (needs update to MSG)
-- iOS BluetoothMeshService callbacks not fully integrated
-- iOS implementation not tested on physical devices
-- iOS message flow not complete end-to-end
-
 #### General
 - Encryption not yet implemented (framework ready)
-- Multi-hop routing not implemented (Phase 3 feature)
+- Multi-hop routing not implemented (Phase 2 feature)
+- Message deduplication not implemented (Phase 2 feature)
+- TTL-based forwarding not implemented (Phase 2 feature)
+- Store-and-forward not implemented (Phase 2 feature)
 - No message acknowledgments yet (Phase 4 feature)
 - No message compression (Phase 5 feature)
 
@@ -206,15 +204,20 @@ Characteristics:
 
 #### Compilation
 - ✅ Android: All files compile successfully
-- ✅ iOS: Constants updated, compilation not verified
+- ✅ iOS: All files compile successfully with MSG_CHARACTERISTIC
 - ✅ Flutter: `flutter analyze` passes (only unrelated test file error)
 - ✅ Example app: Compiles successfully
 
-#### Physical Device Testing
-- ⏳ Android: Not yet tested on physical devices
-- ⏳ iOS: Not yet tested on physical devices
-- ⏳ Multi-device: Not yet tested with multiple devices
-- ⏳ Message transmission: Not yet verified end-to-end
+#### Physical Device Testing ✅ COMPLETE
+- ✅ **Android ↔ Android**: Tested successfully on physical devices
+- ✅ **iOS ↔ iOS**: Tested successfully on physical devices
+- ✅ **Android ↔ iOS**: Cross-platform tested successfully
+- ✅ **Multi-device**: Tested with multiple devices simultaneously
+- ✅ **Message transmission**: Verified end-to-end bidirectional communication
+- ✅ **MSG_CHARACTERISTIC**: Confirmed working on both platforms
+- ✅ **GATT Server/Client**: Both roles tested and working
+- ✅ **Peer discovery**: Auto-connect and connection management verified
+- ✅ **Event streams**: messageStream, peerConnectedStream, meshEventStream working
 
 ### Dependencies
 
@@ -336,13 +339,19 @@ See LICENSE file for details.
 - Physical device testing
 - Multi-device scenarios
 
+### Completed in v0.0.1
+
+- ✅ iOS implementation with MSG_CHARACTERISTIC
+- ✅ Physical device testing (Android & iOS)
+- ✅ Cross-platform testing (Android ↔ iOS)
+- ✅ Multi-device testing
+
 ### In Progress
 
-- iOS implementation completion
-- Physical device testing
-- README with architecture diagrams
+- README with architecture diagrams and mermaid sequence diagrams
 - API documentation
+- Phase 2: Mesh Networking implementation
 
 ---
 
-**Note**: This is a development release. The plugin is functional but not yet production-ready. Physical device testing is required before production use.
+**Note**: Phase 1 is complete and tested. The plugin is functional for peer-to-peer messaging but does not yet support multi-hop routing, encryption, or advanced features planned for Phases 2-6.

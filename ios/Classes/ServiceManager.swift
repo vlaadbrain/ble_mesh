@@ -10,16 +10,10 @@ class ServiceManager {
         return peripheral.services?.first { $0.uuid == BleConstants.meshServiceUUID }
     }
 
-    /// Find TX characteristic (write to peer)
-    func findTxCharacteristic(_ peripheral: CBPeripheral) -> CBCharacteristic? {
+    /// Find MSG characteristic (write to/receive from peer)
+    func findMsgCharacteristic(_ peripheral: CBPeripheral) -> CBCharacteristic? {
         guard let service = findMeshService(peripheral) else { return nil }
-        return service.characteristics?.first { $0.uuid == BleConstants.txCharacteristicUUID }
-    }
-
-    /// Find RX characteristic (receive from peer)
-    func findRxCharacteristic(_ peripheral: CBPeripheral) -> CBCharacteristic? {
-        guard let service = findMeshService(peripheral) else { return nil }
-        return service.characteristics?.first { $0.uuid == BleConstants.rxCharacteristicUUID }
+        return service.characteristics?.first { $0.uuid == BleConstants.msgCharacteristicUUID }
     }
 
     /// Find control characteristic
