@@ -1,7 +1,8 @@
 name: ble_mesh
-description: "A new Flutter plugin project."
+description: "Flutter plugin for bluetooth LE Mesh Networking"
 version: 0.1.0
-homepage:
+homepage: https://github.com/vlaadbrain/ble_mesh
+publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 
 environment:
   sdk: ^3.9.2
