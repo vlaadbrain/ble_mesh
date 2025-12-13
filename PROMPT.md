@@ -543,7 +543,7 @@ This is a Flutter plugin project that aims to bring Bluetooth LE mesh networking
 ---
 
 **Last Updated**: 2025-12-13
-**Plugin Version**: 0.0.1
+**Plugin Version**: 0.1.0
 **Flutter SDK**: >=3.3.0
 **Dart SDK**: ^3.9.2
 

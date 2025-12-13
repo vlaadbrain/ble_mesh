@@ -304,5 +304,5 @@ await _bleMesh.stopMesh();
 **Last Updated**: 2025-12-10
 **Flutter SDK**: >=3.3.0
 **Dart SDK**: ^3.9.2
-**Plugin Version**: 0.0.1
+**Plugin Version**: 0.1.0
 

@@ -1,6 +1,6 @@
 name: ble_mesh
 description: "A new Flutter plugin project."
-version: 0.0.1
+version: 0.1.0
 homepage:
 
 environment:

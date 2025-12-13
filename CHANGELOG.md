@@ -5,7 +5,22 @@ All notable changes to the BLE Mesh Flutter plugin will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.0.1] - 2025-12-13
+## [0.1.0] - 2025-12-13
+
+### Summary
+
+Phase 1 Complete! This release includes full BLE mesh networking functionality for both Android and iOS, with MSG_CHARACTERISTIC implementation, comprehensive testing, and a polished example app.
+
+**Key Highlights:**
+- ✅ Complete Android & iOS implementation
+- ✅ MSG_CHARACTERISTIC for bidirectional communication
+- ✅ Multi-device testing verified (Android ↔ iOS)
+- ✅ Production-ready for peer-to-peer messaging
+- ✅ Example app with permissions and Material Design 3 UI
+
+## [0.0.1] - 2025-12-13 [YANKED]
+
+**Note**: This version was immediately superseded by 0.1.0 after successful multi-device testing.
 
 ### Added
 
