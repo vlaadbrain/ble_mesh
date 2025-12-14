@@ -427,12 +427,19 @@ enum MeshEventType {
   - ✅ Data models (Peer, Message, MeshEvent, PowerMode)
   - ✅ Example app with chat, settings, permissions
 
-### Phase 2: Mesh Networking
-- [ ] Multi-hop message routing
-- [ ] TTL-based forwarding
-- [ ] Message deduplication
-- [ ] Store-and-forward
-- [ ] Binary protocol implementation
+### Phase 2: Mesh Networking 🚧 IN PROGRESS
+- [ ] **Multi-hop message routing** ⬅️ CURRENT FOCUS
+  - [ ] 1.1 Design routing architecture (2-3 hours)
+  - [ ] 1.2 Implement message header with routing info (3-4 hours)
+  - [ ] 1.3 Implement message forwarding logic (4-5 hours)
+  - [ ] 1.4 Update data models (2-3 hours)
+  - [ ] 1.5 Test multi-hop routing (4-6 hours)
+- [ ] TTL-based forwarding (included in multi-hop routing)
+- [ ] Message deduplication (included in multi-hop routing)
+- [ ] Store-and-forward (6-8 hours)
+- [ ] Binary protocol implementation (4-5 hours)
+
+**See `PHASE_2_IMPLEMENTATION_PLAN.md` for detailed breakdown**
 
 ### Phase 3: Encryption & Security
 - [ ] Key exchange implementation
