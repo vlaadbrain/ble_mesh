@@ -144,11 +144,27 @@ class BluetoothMeshService {
 
         print("[\(tag)] Sending public message to \(connectedPeripherals.count) peers: \(content)")
 
-        // Create message data
-        guard let messageData = content.data(using: .utf8) else {
-            print("[\(tag)] Failed to encode message")
-            return
-        }
+        // Phase 2: Create message object
+        let senderId = UIDevice.current.identifierForVendor?.uuidString ?? "00:00:00:00:00:00"
+        // Convert UUID to MAC address format (use first 6 bytes)
+        let senderIdFormatted = String(senderId.prefix(17).replacingOccurrences(of: "-", with: ":"))
+
+        let message = Message(
+            senderId: senderIdFormatted,
+            senderNickname: deviceNickname,
+            content: content,
+            type: .publicMessage,
+            status: .sent,
+            ttl: 7,  // Default TTL
+            hopCount: 0,
+            messageId: MessageHeader.generateMessageId(),
+            isForwarded: false
+        )
+
+        // Serialize message (header + payload)
+        let messageData = message.toData()
+
+        print("[\(tag)] Created message: id=\(message.messageId), ttl=\(message.ttl), size=\(messageData.count) bytes")
 
         // Send to all connected peers
         connectedPeripherals.forEach { identifier in

@@ -10,6 +10,47 @@ class MockBleMeshPlatform
 
   @override
   Future<String?> getPlatformVersion() => Future.value('42');
+
+  @override
+  Future<void> initialize({
+    String? nickname,
+    bool enableEncryption = true,
+    PowerMode powerMode = PowerMode.balanced,
+  }) async {
+    // Mock implementation
+  }
+
+  @override
+  Future<void> startMesh() async {
+    // Mock implementation
+  }
+
+  @override
+  Future<void> stopMesh() async {
+    // Mock implementation
+  }
+
+  @override
+  Future<void> sendPublicMessage(String message) async {
+    // Mock implementation
+  }
+
+  @override
+  Future<List<Peer>> getConnectedPeers() async {
+    return [];
+  }
+
+  @override
+  Stream<Message> get messageStream => Stream.empty();
+
+  @override
+  Stream<Peer> get peerConnectedStream => Stream.empty();
+
+  @override
+  Stream<Peer> get peerDisconnectedStream => Stream.empty();
+
+  @override
+  Stream<MeshEvent> get meshEventStream => Stream.empty();
 }
 
 void main() {

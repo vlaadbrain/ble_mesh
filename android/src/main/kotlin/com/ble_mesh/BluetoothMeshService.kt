@@ -7,6 +7,7 @@ import android.os.Looper
 import android.util.Log
 import com.ble_mesh.models.MeshEvent
 import com.ble_mesh.models.MeshEventType
+import com.ble_mesh.models.MessageHeader
 import com.ble_mesh.models.Peer
 import com.ble_mesh.models.PowerMode
 import java.util.UUID
@@ -17,6 +18,10 @@ import java.util.UUID
  */
 class BluetoothMeshService(private val context: Context) {
     private val tag = "BluetoothMeshService"
+
+    // Bluetooth adapter
+    private val bluetoothManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as android.bluetooth.BluetoothManager
+    private val bluetoothAdapter = bluetoothManager.adapter
 
     // Components
     private val bleScanner = BleScanner(context)
@@ -170,8 +175,24 @@ class BluetoothMeshService(private val context: Context) {
 
         Log.d(tag, "Sending public message to ${connectedDevices.size} peers: $content")
 
-        // Create message data
-        val messageData = content.toByteArray(Charsets.UTF_8)
+        // Phase 2: Create message object
+        val senderId = bluetoothAdapter.address ?: "00:00:00:00:00:00"
+        val message = com.ble_mesh.models.Message(
+            senderId = senderId,
+            senderNickname = deviceNickname,
+            content = content,
+            type = com.ble_mesh.models.MessageType.PUBLIC,
+            status = com.ble_mesh.models.DeliveryStatus.SENT,
+            ttl = 7,  // Default TTL
+            hopCount = 0,
+            messageId = MessageHeader.generateMessageId(),
+            isForwarded = false
+        )
+
+        // Serialize message (header + payload)
+        val messageData = message.toByteArray()
+
+        Log.d(tag, "Created message: id=${message.messageId}, ttl=${message.ttl}, size=${messageData.size} bytes")
 
         // Send to all connected peers
         connectedDevices.forEach { address ->

@@ -28,6 +28,7 @@
 .pub-cache/
 .pub/
 /build/
+**/pubspec.lock
 
 # Android related
 **/android/**/gradle-wrapper.jar
@@ -89,11 +90,4 @@ android/kls_database.db
 # FVM Version Cache
 .fvm/
 
-DEVICE_ADDRESS_FIX.md
-GATT_SERVER_CALLBACK_FIX.md
-GATT_SERVER_FIX.md
-MESSAGE_FLOW_VERIFICATION.md
-MSG_CHARACTERISTIC_REFACTORING.md
-PACKAGE_RENAME.md
-THREADING_FIX.md
-PHASE_2_IMPLEMENTATION_PLAN.md
+docs/

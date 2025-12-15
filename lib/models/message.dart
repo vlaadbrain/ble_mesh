@@ -57,6 +57,18 @@ class Message {
   /// Delivery status
   final DeliveryStatus status;
 
+  /// Phase 2: Time-to-live (hops remaining)
+  final int ttl;
+
+  /// Phase 2: Number of hops taken
+  final int hopCount;
+
+  /// Phase 2: Unique message ID for routing
+  final String messageId;
+
+  /// Phase 2: Whether this message was forwarded
+  final bool isForwarded;
+
   const Message({
     required this.id,
     required this.senderId,
@@ -67,6 +79,11 @@ class Message {
     this.channel,
     this.isEncrypted = false,
     this.status = DeliveryStatus.pending,
+    // Phase 2: Routing fields with defaults
+    this.ttl = 7,
+    this.hopCount = 0,
+    required this.messageId,
+    this.isForwarded = false,
   });
 
   /// Create a Message from a map (for method channel deserialization)
@@ -81,6 +98,11 @@ class Message {
       channel: map['channel'] as String?,
       isEncrypted: map['isEncrypted'] as bool? ?? false,
       status: DeliveryStatus.values[map['status'] as int? ?? 0],
+      // Phase 2: Routing fields
+      ttl: map['ttl'] as int? ?? 7,
+      hopCount: map['hopCount'] as int? ?? 0,
+      messageId: map['messageId'] as String? ?? map['id'] as String,
+      isForwarded: map['isForwarded'] as bool? ?? false,
     );
   }
 
@@ -96,6 +118,11 @@ class Message {
       'channel': channel,
       'isEncrypted': isEncrypted,
       'status': status.index,
+      // Phase 2: Routing fields
+      'ttl': ttl,
+      'hopCount': hopCount,
+      'messageId': messageId,
+      'isForwarded': isForwarded,
     };
   }
 
@@ -110,6 +137,10 @@ class Message {
     String? channel,
     bool? isEncrypted,
     DeliveryStatus? status,
+    int? ttl,
+    int? hopCount,
+    String? messageId,
+    bool? isForwarded,
   }) {
     return Message(
       id: id ?? this.id,
@@ -121,6 +152,10 @@ class Message {
       channel: channel ?? this.channel,
       isEncrypted: isEncrypted ?? this.isEncrypted,
       status: status ?? this.status,
+      ttl: ttl ?? this.ttl,
+      hopCount: hopCount ?? this.hopCount,
+      messageId: messageId ?? this.messageId,
+      isForwarded: isForwarded ?? this.isForwarded,
     );
   }
 

@@ -60,8 +60,9 @@ class _ChatScreenState extends State<ChatScreen> {
       await widget.bleMesh.sendPublicMessage(text);
 
       // Add own message to the list
+      final messageId = DateTime.now().millisecondsSinceEpoch.toString();
       final ownMessage = Message(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        id: messageId,
         senderId: 'self',
         senderNickname: widget.nickname,
         content: text,
@@ -70,6 +71,11 @@ class _ChatScreenState extends State<ChatScreen> {
         channel: null,
         isEncrypted: false,
         status: DeliveryStatus.sent,
+        // Phase 2: Routing fields
+        messageId: messageId,
+        ttl: 7,
+        hopCount: 0,
+        isForwarded: false,
       );
 
       setState(() {
@@ -318,6 +324,40 @@ class _MessageBubble extends StatelessWidget {
                           Icons.lock,
                           size: 12,
                           color: Colors.grey.shade600,
+                        ),
+                      ],
+                      // Phase 2: Show routing info if message was forwarded
+                      if (message.isForwarded && message.hopCount > 0) ...[
+                        const SizedBox(width: 4),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: Colors.orange.shade100,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: Colors.orange.shade300,
+                              width: 0.5,
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.route,
+                                size: 10,
+                                color: Colors.orange.shade700,
+                              ),
+                              const SizedBox(width: 2),
+                              Text(
+                                '${message.hopCount}',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.orange.shade700,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ],
                     ],
