@@ -9,7 +9,7 @@ import 'dart:math';
 /// - TTL (1 byte): Time-to-live (hops remaining)
 /// - Hop Count (1 byte): Number of hops taken
 /// - Message ID (8 bytes): Unique message identifier
-/// - Sender ID (6 bytes): Original sender MAC address
+/// - Sender ID (6 bytes): Compact device UUID (first 6 bytes of device UUID)
 /// - Payload Length (2 bytes): Length of payload data
 class MessageHeader {
   final int version;
@@ -17,7 +17,7 @@ class MessageHeader {
   int hopCount;
   final int type;
   final int messageId;
-  final String senderId; // MAC address as string (e.g., "AA:BB:CC:DD:EE:FF")
+  final String senderId; // Compact device ID as string (e.g., "55:0E:84:00:E2:9B")
   final int payloadLength;
 
   // Constants
@@ -76,8 +76,8 @@ class MessageHeader {
     buffer.setInt64(offset, messageId, Endian.big);
     offset += 8;
 
-    // Write sender ID (6 bytes MAC address)
-    final senderBytes = _macStringToBytes(senderId);
+    // Write sender ID (6 bytes compact device ID)
+    final senderBytes = _compactIdStringToBytes(senderId);
     for (var i = 0; i < 6; i++) {
       buffer.setUint8(offset + i, senderBytes[i]);
     }
@@ -127,9 +127,9 @@ class MessageHeader {
     final messageId = buffer.getInt64(offset, Endian.big);
     offset += 8;
 
-    // Read sender ID (6 bytes MAC address)
+    // Read sender ID (6 bytes compact device ID)
     final senderBytes = data.sublist(offset, offset + 6);
-    final senderId = _macBytesToString(senderBytes);
+    final senderId = _compactIdBytesToString(senderBytes);
     offset += 6;
 
     // Read payload length (2 bytes, big-endian)
@@ -146,12 +146,12 @@ class MessageHeader {
     );
   }
 
-  /// Convert MAC address string to bytes
-  /// Example: "AA:BB:CC:DD:EE:FF" -> [0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF]
-  static Uint8List _macStringToBytes(String mac) {
-    final parts = mac.split(':');
+  /// Convert compact device ID string to bytes
+  /// Example: \"55:0E:84:00:E2:9B\" -> [0x55, 0x0e, 0x84, 0x00, 0xe2, 0x9b]
+  static Uint8List _compactIdStringToBytes(String compactId) {
+    final parts = compactId.split(':');
     if (parts.length != 6) {
-      throw ArgumentError('Invalid MAC address format: $mac');
+      throw ArgumentError('Invalid compact ID format: $compactId (expected XX:XX:XX:XX:XX:XX)');
     }
 
     final bytes = Uint8List(6);
@@ -161,9 +161,9 @@ class MessageHeader {
     return bytes;
   }
 
-  /// Convert MAC address bytes to string
-  /// Example: [0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF] -> "AA:BB:CC:DD:EE:FF"
-  static String _macBytesToString(Uint8List bytes) {
+  /// Convert compact device ID bytes to string
+  /// Example: [0x55, 0x0e, 0x84, 0x00, 0xe2, 0x9b] -> \"55:0E:84:00:E2:9B\"
+  static String _compactIdBytesToString(Uint8List bytes) {
     return bytes.map((b) => b.toRadixString(16).padLeft(2, '0').toUpperCase()).join(':');
   }
 

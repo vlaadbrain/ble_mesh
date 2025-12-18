@@ -13,7 +13,7 @@ import java.util.UUID
  * - TTL (1 byte): Time-to-live (hops remaining)
  * - Hop Count (1 byte): Number of hops taken
  * - Message ID (8 bytes): Unique message identifier
- * - Sender ID (6 bytes): Original sender MAC address
+ * - Sender ID (6 bytes): Compact device UUID (first 6 bytes of device UUID)
  * - Payload Length (2 bytes): Length of payload data
  */
 data class MessageHeader(
@@ -22,7 +22,7 @@ data class MessageHeader(
     var ttl: Byte,
     var hopCount: Byte,
     val messageId: Long,
-    val senderId: String,  // MAC address as string (e.g., "AA:BB:CC:DD:EE:FF")
+    val senderId: String,  // Compact device ID as string (e.g., "55:0E:84:00:E2:9B")
     val payloadLength: Short
 ) {
     companion object {
@@ -69,10 +69,10 @@ data class MessageHeader(
             val hopCount = buffer.get()
             val messageId = buffer.getLong()
 
-            // Parse sender ID (6 bytes MAC address)
+            // Parse sender ID (6 bytes compact device ID)
             val senderIdBytes = ByteArray(6)
             buffer.get(senderIdBytes)
-            val senderId = macBytesToString(senderIdBytes)
+            val senderId = compactIdToString(senderIdBytes)
 
             val payloadLength = buffer.getShort()
 
@@ -93,23 +93,23 @@ data class MessageHeader(
         }
 
         /**
-         * Convert MAC address bytes to string format
-         * Example: [0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF] -> "AA:BB:CC:DD:EE:FF"
+         * Convert compact device ID bytes to string format
+         * Example: [0x55, 0x0e, 0x84, 0x00, 0xe2, 0x9b] -> "55:0E:84:00:E2:9B"
          */
-        private fun macBytesToString(bytes: ByteArray): String {
+        private fun compactIdToString(bytes: ByteArray): String {
             return bytes.joinToString(":") { byte ->
                 String.format("%02X", byte)
             }
         }
 
         /**
-         * Convert MAC address string to bytes
-         * Example: "AA:BB:CC:DD:EE:FF" -> [0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF]
+         * Convert compact device ID string to bytes
+         * Example: "55:0E:84:00:E2:9B" -> [0x55, 0x0e, 0x84, 0x00, 0xe2, 0x9b]
          */
-        private fun macStringToBytes(mac: String): ByteArray {
-            val parts = mac.split(":", "-")
+        private fun compactIdStringToBytes(compactId: String): ByteArray {
+            val parts = compactId.split(":", "-")
             if (parts.size != 6) {
-                throw IllegalArgumentException("Invalid MAC address format: $mac")
+                throw IllegalArgumentException("Invalid compact ID format: $compactId")
             }
             return parts.map { it.toInt(16).toByte() }.toByteArray()
         }
@@ -130,8 +130,8 @@ data class MessageHeader(
         buffer.put(hopCount)
         buffer.putLong(messageId)
 
-        // Write sender ID (6 bytes MAC address)
-        val senderIdBytes = macStringToBytes(senderId)
+        // Write sender ID (6 bytes compact device ID)
+        val senderIdBytes = compactIdStringToBytes(senderId)
         buffer.put(senderIdBytes)
 
         buffer.putShort(payloadLength)

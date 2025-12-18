@@ -14,6 +14,9 @@ class BluetoothMeshService {
     private let connectionManager = BleConnectionManager()
     private let serviceManager = ServiceManager()
 
+    // Phase 2: Message deduplication cache
+    private let messageCache = MessageCache(maxSize: 1000, expirationTimeInterval: 5 * 60) // 5 minutes
+
     // State
     private var isRunning = false
     private var deviceNickname: String = "BleMesh_\(Int(Date().timeIntervalSince1970) % 10000)"
@@ -164,7 +167,11 @@ class BluetoothMeshService {
         // Serialize message (header + payload)
         let messageData = message.toData()
 
-        print("[\(tag)] Created message: id=\(message.messageId), ttl=\(message.ttl), size=\(messageData.count) bytes")
+        print("[\(tag)] Created message: senderId=\(message.senderId), messageId=\(message.messageId), ttl=\(message.ttl), size=\(messageData.count) bytes")
+
+        // Add to cache to prevent processing if we receive it back (loop prevention)
+        _ = messageCache.addMessage(senderId: message.senderId, messageId: message.messageId)
+        print("[\(tag)] Added own message to cache for loop prevention")
 
         // Send to all connected peers
         connectedPeripherals.forEach { identifier in
@@ -278,22 +285,33 @@ class BluetoothMeshService {
 
             // Handle received message
             if uuid == BleConstants.msgCharacteristicUUID {
-                if let content = String(data: data, encoding: .utf8) {
-                    print("[\(self.tag)] Received message from \(identifier): \(content)")
+                // Phase 2: Deserialize message with header
+                let peer = self.peerManager.getPeer(identifier)
+                if let message = Message.fromData(data, senderNickname: peer?.nickname ?? "Unknown") {
+                    print("[\(self.tag)] Received message: senderId=\(message.senderId), messageId=\(message.messageId), ttl=\(message.ttl), hopCount=\(message.hopCount), content=\(message.content)")
 
-                    // Create message object
-                    let peer = self.peerManager.getPeer(identifier)
-                    let message = Message(
-                        senderId: identifier,
-                        senderNickname: peer?.nickname ?? "Unknown",
-                        content: content,
-                        type: .publicMessage,
-                        status: .delivered
-                    )
+                    // Phase 2: Check for duplicate (deduplication) using composite key
+                    if self.messageCache.hasMessage(senderId: message.senderId, messageId: message.messageId) {
+                        print("[\(self.tag)] Duplicate message detected, dropping: id=\(message.messageId)")
+                        return
+                    }
+
+                    // Add to cache
+                    _ = self.messageCache.addMessage(senderId: message.senderId, messageId: message.messageId)
 
                     // Send message to Flutter via callback
-                    print("[\(self.tag)] Message received: \(message.content)")
+                    print("[\(self.tag)] Forwarding message to Flutter: \(message.content)")
                     self.onMessageReceived?(message)
+
+                    // Phase 2: Forward message if TTL > 1
+                    if message.ttl > 1 {
+                        print("[\(self.tag)] Message can be forwarded (TTL=\(message.ttl)), forwarding to other peers")
+                        self.forwardMessage(message, senderIdentifier: identifier)
+                    } else {
+                        print("[\(self.tag)] Message TTL exhausted (TTL=\(message.ttl)), not forwarding")
+                    }
+                } else {
+                    print("[\(self.tag)] Failed to parse message from \(identifier)")
                 }
             }
         }
@@ -306,6 +324,51 @@ class BluetoothMeshService {
                 message: "Connection error: \(error)",
                 data: ["peerId": identifier]
             ))
+        }
+
+        // Peripheral server callbacks - handle incoming messages when acting as peripheral
+        blePeripheralServer.onCharacteristicWriteRequest = { [weak self] central, data in
+            guard let self = self else { return }
+            print("[\(self.tag)] Received data from central (as peripheral): \(central.identifier), size: \(data.count)")
+
+            // Phase 2: Deserialize message with header
+            if let message = Message.fromData(data, senderNickname: "Unknown") {
+                print("[\(self.tag)] Received message from central: senderId=\(message.senderId), messageId=\(message.messageId), ttl=\(message.ttl), hopCount=\(message.hopCount), content=\(message.content)")
+
+                // Phase 2: Check for duplicate (deduplication) using composite key
+                if self.messageCache.hasMessage(senderId: message.senderId, messageId: message.messageId) {
+                    print("[\(self.tag)] Duplicate message detected (from central), dropping: id=\(message.messageId)")
+                    return
+                }
+
+                // Add to cache
+                _ = self.messageCache.addMessage(senderId: message.senderId, messageId: message.messageId)
+
+                // Send message to Flutter via callback
+                print("[\(self.tag)] Forwarding message from central to Flutter: \(message.content)")
+                self.onMessageReceived?(message)
+
+                // Phase 2: Forward message if TTL > 1
+                if message.ttl > 1 {
+                    print("[\(self.tag)] Message can be forwarded (TTL=\(message.ttl)), forwarding to other peers")
+                    self.forwardMessage(message, senderIdentifier: central.identifier.uuidString)
+                } else {
+                    print("[\(self.tag)] Message TTL exhausted (TTL=\(message.ttl)), not forwarding")
+                }
+            } else {
+                print("[\(self.tag)] Failed to parse message from central \(central.identifier)")
+            }
+        }
+
+        blePeripheralServer.onCentralConnected = { [weak self] central in
+            guard let self = self else { return }
+            print("[\(self.tag)] Central connected (to our peripheral): \(central.identifier)")
+            // Note: We don't track centrals in peerManager as they're not persistent connections
+        }
+
+        blePeripheralServer.onCentralDisconnected = { [weak self] central in
+            guard let self = self else { return }
+            print("[\(self.tag)] Central disconnected (from our peripheral): \(central.identifier)")
         }
     }
 
@@ -339,6 +402,59 @@ class BluetoothMeshService {
                 self.peerManager.removeStalePeers()
             }
         }
+    }
+
+    /// Forward a message to all connected peers except the sender
+    /// Phase 2: Multi-hop routing implementation
+    ///
+    /// - Parameters:
+    ///   - message: Original message to forward
+    ///   - senderIdentifier: Identifier of the peer who sent us this message (don't send back to them)
+    private func forwardMessage(_ message: Message, senderIdentifier: String) {
+        // Create a new message with decremented TTL and incremented hop count
+        let forwardedMessage = Message(
+            id: message.id,
+            senderId: message.senderId,  // Keep original sender
+            senderNickname: message.senderNickname,
+            content: message.content,
+            type: message.type,
+            timestamp: message.timestamp,
+            channel: message.channel,
+            isEncrypted: message.isEncrypted,
+            status: .sent,
+            ttl: message.ttl - 1,  // Decrement TTL
+            hopCount: message.hopCount + 1,  // Increment hop count
+            messageId: message.messageId,  // Keep same message ID
+            isForwarded: true
+        )
+
+        // Serialize message
+        let messageData = forwardedMessage.toData()
+
+        print("[\(tag)] Forwarding message id=\(forwardedMessage.messageId), ttl=\(forwardedMessage.ttl), hopCount=\(forwardedMessage.hopCount)")
+
+        // Forward to all connected peers except the sender
+        let connectedPeripherals = connectionManager.getConnectedPeripherals()
+        var forwardCount = 0
+
+        connectedPeripherals.forEach { identifier in
+            // Skip the sender
+            if identifier == senderIdentifier {
+                print("[\(tag)] Skipping forward to sender: \(identifier)")
+                return
+            }
+
+            if let peripheral = connectionManager.getConnectedPeripheral(identifier),
+               let msgCharacteristic = serviceManager.findMsgCharacteristic(peripheral) {
+                _ = serviceManager.writeCharacteristic(peripheral, characteristic: msgCharacteristic, data: messageData)
+                forwardCount += 1
+                print("[\(tag)] Forwarded message to peer: \(identifier)")
+            } else {
+                print("[\(tag)] MSG characteristic not found for peer: \(identifier)")
+            }
+        }
+
+        print("[\(tag)] Message forwarded to \(forwardCount) peer(s)")
     }
 
     /// Clean up resources

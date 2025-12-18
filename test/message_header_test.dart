@@ -6,7 +6,7 @@ void main() {
   group('MessageHeader', () {
     test('serialization creates 20-byte header', () {
       final messageId = MessageHeader.generateMessageId();
-      final senderId = 'AA:BB:CC:DD:EE:FF';
+      final senderId = '55:0E:84:00:E2:9B'; // Compact device ID
       final header = MessageHeader(
         type: MessageHeader.typePublic,
         ttl: 7,
@@ -27,7 +27,7 @@ void main() {
 
     test('deserialization parses header correctly', () {
       final messageId = 123456789;
-      final senderId = '11:22:33:44:55:66';
+      final senderId = 'A1:B2:C3:D4:E5:F6'; // Compact device ID
       final header = MessageHeader(
         type: MessageHeader.typeChannel,
         ttl: 5,
@@ -201,28 +201,30 @@ void main() {
       );
     });
 
-    test('MAC address formats are handled correctly', () {
-      final macAddresses = [
+    test('compact device ID formats are handled correctly', () {
+      final deviceIds = [
         'AA:BB:CC:DD:EE:FF',
         '00:11:22:33:44:55',
         'FF:FF:FF:FF:FF:FF',
         '00:00:00:00:00:00',
+        '55:0E:84:00:E2:9B',
+        'A1:B2:C3:D4:E5:F6',
       ];
 
-      for (final mac in macAddresses) {
+      for (final deviceId in deviceIds) {
         final header = MessageHeader(
           type: MessageHeader.typePublic,
           ttl: 7,
           hopCount: 0,
           messageId: 1,
-          senderId: mac,
+          senderId: deviceId,
           payloadLength: 10,
         );
 
         final bytes = header.toBytes();
         final deserialized = MessageHeader.fromBytes(bytes);
 
-        expect(deserialized.senderId, mac, reason: 'MAC address should match: $mac');
+        expect(deserialized.senderId, deviceId, reason: 'Device ID should match: $deviceId');
       }
     });
 

@@ -31,6 +31,9 @@ class BluetoothMeshService(private val context: Context) {
     private val connectionManager = BleConnectionManager(context)
     private val gattServiceManager = GattServiceManager()
 
+    // Phase 2: Message deduplication cache
+    private val messageCache = MessageCache(maxSize = 1000, expirationTimeMs = 5 * 60 * 1000) // 5 minutes
+
     // State
     private var isRunning = false
     private var deviceNickname: String = "BleMesh_${System.currentTimeMillis() % 10000}"
@@ -192,7 +195,11 @@ class BluetoothMeshService(private val context: Context) {
         // Serialize message (header + payload)
         val messageData = message.toByteArray()
 
-        Log.d(tag, "Created message: id=${message.messageId}, ttl=${message.ttl}, size=${messageData.size} bytes")
+        Log.d(tag, "Created message: senderId=${message.senderId}, messageId=${message.messageId}, ttl=${message.ttl}, size=${messageData.size} bytes")
+
+        // Add to cache to prevent processing if we receive it back (loop prevention)
+        messageCache.addMessage(message.senderId, message.messageId)
+        Log.d(tag, "Added own message to cache for loop prevention")
 
         // Send to all connected peers
         connectedDevices.forEach { address ->
@@ -258,22 +265,35 @@ class BluetoothMeshService(private val context: Context) {
         bleGattServer.onCharacteristicWriteRequest = { device, data ->
             Log.d(tag, "GATT server received write from ${device.address}, size: ${data.size} bytes")
 
-            val content = String(data, Charsets.UTF_8)
-            Log.d(tag, "GATT server received message: $content")
-
-            // Create message object
+            // Phase 2: Deserialize message with header
             val peer = peerManager.getPeer(device.address)
-            val message = com.ble_mesh.models.Message(
-                senderId = device.address,
-                senderNickname = peer?.nickname ?: "Unknown",
-                content = content,
-                type = com.ble_mesh.models.MessageType.PUBLIC,
-                status = com.ble_mesh.models.DeliveryStatus.DELIVERED
-            )
+            val message = com.ble_mesh.models.Message.fromByteArray(data, peer?.nickname ?: "Unknown")
 
-            // Send message to Flutter via callback
-            Log.d(tag, "Forwarding message to Flutter: ${message.content}")
-            onMessageReceived?.invoke(message)
+            if (message != null) {
+                Log.d(tag, "Received message: senderId=${message.senderId}, messageId=${message.messageId}, ttl=${message.ttl}, hopCount=${message.hopCount}, content=${message.content}")
+
+                // Phase 2: Check for duplicate (deduplication) using composite key
+                if (!messageCache.hasMessage(message.senderId, message.messageId)) {
+                    // Add to cache
+                    messageCache.addMessage(message.senderId, message.messageId)
+
+                    // Send message to Flutter via callback
+                    Log.d(tag, "Forwarding message to Flutter: ${message.content}")
+                    onMessageReceived?.invoke(message)
+
+                    // Phase 2: Forward message if TTL > 1
+                    if (message.ttl > 1) {
+                        Log.d(tag, "Message can be forwarded (TTL=${message.ttl}), forwarding to other peers")
+                        forwardMessage(message, device.address)
+                    } else {
+                        Log.d(tag, "Message TTL exhausted (TTL=${message.ttl}), not forwarding")
+                    }
+                } else {
+                    Log.d(tag, "Duplicate message detected, dropping: id=${message.messageId}")
+                }
+            } else {
+                Log.w(tag, "Failed to parse message from ${device.address}")
+            }
         }
 
         bleGattServer.onDeviceConnected = { device ->
@@ -343,22 +363,35 @@ class BluetoothMeshService(private val context: Context) {
 
             // Handle received message
             if (uuid == BleConstants.MSG_CHARACTERISTIC_UUID) {
-                val content = String(data, Charsets.UTF_8)
-                Log.d(tag, "Received message from $address: $content")
-
-                // Create message object
+                // Phase 2: Deserialize message with header
                 val peer = peerManager.getPeer(address)
-                val message = com.ble_mesh.models.Message(
-                    senderId = address,
-                    senderNickname = peer?.nickname ?: "Unknown",
-                    content = content,
-                    type = com.ble_mesh.models.MessageType.PUBLIC,
-                    status = com.ble_mesh.models.DeliveryStatus.DELIVERED
-                )
+                val message = com.ble_mesh.models.Message.fromByteArray(data, peer?.nickname ?: "Unknown")
 
-                // Send message to Flutter via callback
-                Log.d(tag, "Message received: ${message.content}")
-                onMessageReceived?.invoke(message)
+                if (message != null) {
+                    Log.d(tag, "Received message: senderId=${message.senderId}, messageId=${message.messageId}, ttl=${message.ttl}, hopCount=${message.hopCount}, content=${message.content}")
+
+                    // Phase 2: Check for duplicate (deduplication) using composite key
+                    if (!messageCache.hasMessage(message.senderId, message.messageId)) {
+                        // Add to cache
+                        messageCache.addMessage(message.senderId, message.messageId)
+
+                        // Send message to Flutter via callback
+                        Log.d(tag, "Forwarding message to Flutter: ${message.content}")
+                        onMessageReceived?.invoke(message)
+
+                        // Phase 2: Forward message if TTL > 1
+                        if (message.ttl > 1) {
+                            Log.d(tag, "Message can be forwarded (TTL=${message.ttl}), forwarding to other peers")
+                            forwardMessage(message, address)
+                        } else {
+                            Log.d(tag, "Message TTL exhausted (TTL=${message.ttl}), not forwarding")
+                        }
+                    } else {
+                        Log.d(tag, "Duplicate message detected, dropping: id=${message.messageId}")
+                    }
+                } else {
+                    Log.w(tag, "Failed to parse message from $address")
+                }
             }
         }
 
@@ -405,6 +438,63 @@ class BluetoothMeshService(private val context: Context) {
                 handler.postDelayed(this, 30000L) // Every 30 seconds
             }
         }, 30000L)
+    }
+
+    /**
+     * Forward a message to all connected peers except the sender
+     * Phase 2: Multi-hop routing implementation
+     *
+     * @param message Original message to forward
+     * @param senderAddress Address of the peer who sent us this message (don't send back to them)
+     */
+    private fun forwardMessage(message: com.ble_mesh.models.Message, senderAddress: String) {
+        // Create a new message with decremented TTL and incremented hop count
+        val forwardedMessage = com.ble_mesh.models.Message(
+            id = message.id,
+            senderId = message.senderId,  // Keep original sender
+            senderNickname = message.senderNickname,
+            content = message.content,
+            type = message.type,
+            timestamp = message.timestamp,
+            channel = message.channel,
+            isEncrypted = message.isEncrypted,
+            status = com.ble_mesh.models.DeliveryStatus.SENT,
+            ttl = message.ttl - 1,  // Decrement TTL
+            hopCount = message.hopCount + 1,  // Increment hop count
+            messageId = message.messageId,  // Keep same message ID
+            isForwarded = true
+        )
+
+        // Serialize message
+        val messageData = forwardedMessage.toByteArray()
+
+        Log.d(tag, "Forwarding message id=${forwardedMessage.messageId}, ttl=${forwardedMessage.ttl}, hopCount=${forwardedMessage.hopCount}")
+
+        // Forward to all connected peers except the sender
+        val connectedDevices = connectionManager.getConnectedDevices()
+        var forwardCount = 0
+
+        connectedDevices.forEach { address ->
+            // Skip the sender
+            if (address == senderAddress) {
+                Log.d(tag, "Skipping forward to sender: $address")
+                return@forEach
+            }
+
+            val gatt = connectionManager.getGatt(address)
+            if (gatt != null) {
+                val msgCharacteristic = gattServiceManager.findMsgCharacteristic(gatt)
+                if (msgCharacteristic != null) {
+                    gattServiceManager.writeCharacteristic(gatt, msgCharacteristic, messageData)
+                    forwardCount++
+                    Log.d(tag, "Forwarded message to peer: $address")
+                } else {
+                    Log.w(tag, "MSG characteristic not found for peer: $address")
+                }
+            }
+        }
+
+        Log.d(tag, "Message forwarded to $forwardCount peer(s)")
     }
 
     /**
