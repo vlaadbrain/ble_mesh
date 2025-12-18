@@ -401,6 +401,7 @@ class Peer {
   final DateTime lastSeen;
   final bool isConnected;
   final int hopCount;
+  final DateTime? lastForwardTime; // Phase 2: Last message forward time
 }
 
 class Message {
@@ -413,6 +414,11 @@ class Message {
   final String? channel;
   final bool isEncrypted;
   final DeliveryStatus status;
+  // Phase 2: Routing fields
+  final int ttl;              // Time-to-live (hops remaining)
+  final int hopCount;         // Number of hops taken
+  final String messageId;     // Unique routing identifier
+  final bool isForwarded;     // Whether message was forwarded
 }
 
 enum MessageType {
@@ -446,7 +452,10 @@ enum MeshEventType {
   meshStarted,
   meshStopped,
   peerDiscovered,
+  peerConnected,
+  peerDisconnected,
   messageReceived,
+  forwardingMetrics, // Phase 2: Forwarding metrics event
   error,
 }
 ```
@@ -573,7 +582,7 @@ enum MeshEventType {
   - ✅ Data models (Peer, Message, MeshEvent, PowerMode)
   - ✅ Example app with chat, settings, permissions
 
-### Phase 2: Mesh Networking 🚧 IN PROGRESS (60% Complete)
+### Phase 2: Mesh Networking 🚧 IN PROGRESS (85% Complete)
 
 **Completed Tasks:**
 - [x] **Task 1.1: Design routing architecture** ✅ (2-3 hours)
@@ -591,20 +600,55 @@ enum MeshEventType {
   - ✅ Cross-platform binary compatibility verified
   - ✅ Message class refactored to encapsulate MessageHeader
   - ✅ `sendPublicMessage` updated to use MessageHeader
+  - ✅ Device ID redesign: UUID-based identification (replaces unreliable MAC addresses)
+    - ✅ Dart: `DeviceIdManager.dart` (147 lines) + tests (18 tests)
+    - ✅ Android: `DeviceIdManager.kt` (149 lines)
+    - ✅ iOS: `DeviceIdManager.swift` (154 lines)
+    - ✅ 6-byte compact ID format for MessageHeader (fits 20-byte protocol)
+    - ✅ Privacy-friendly, stable, cross-platform compatible
+
+**Completed Tasks:**
+- [x] **Task 1.3: Implement message forwarding logic** ✅ (5 hours)
+  - [x] 1.3.1: Add message cache for deduplication (Android/iOS) ✅
+    - ✅ Android: `MessageCache.kt` (188 lines) with composite key (senderId, messageId)
+    - ✅ iOS: `MessageCache.swift` (211 lines) with composite key (senderId, messageId)
+    - ✅ LRU eviction (1000 entries), 5-minute expiration, thread-safe
+  - [x] 1.3.2: Update message receiving to parse MessageHeader ✅
+    - ✅ Android: Both GATT server write and characteristic changed handlers
+    - ✅ iOS: Both central role and peripheral role reception paths
+    - ✅ Full MessageHeader parsing with senderId, messageId, TTL, hopCount
+  - [x] 1.3.3: Implement forwarding decision logic ✅
+    - ✅ Composite key deduplication check before processing
+    - ✅ TTL > 1 check before forwarding
+    - ✅ Loop prevention (own messages cached before transmission)
+  - [x] 1.3.4: Forward messages to peers ✅
+    - ✅ Android: `forwardMessage()` method (Lines 465-512)
+    - ✅ iOS: `forwardMessage()` method (Lines 407-454)
+    - ✅ TTL decrement, hop count increment, original sender ID preserved
+    - ✅ Excludes sender from forwarding to prevent immediate loops
+  - [x] 1.3.5: Add logging for forwarding events ✅
+    - ✅ Message reception logging with full header details
+    - ✅ Deduplication check results
+    - ✅ Forwarding decisions (TTL check)
+    - ✅ Per-peer forwarding status
+    - ✅ Total forward count
 
 **Remaining Tasks:**
-- [ ] **Task 1.3: Implement message forwarding logic** ⬅️ NEXT (4-5 hours)
-  - [ ] 1.3.1: Add message cache for deduplication (Android/iOS)
-  - [ ] 1.3.2: Update message receiving to parse MessageHeader
-  - [ ] 1.3.3: Implement forwarding decision logic (check TTL, deduplication)
-  - [ ] 1.3.4: Forward messages to peers (decrement TTL, increment hop count)
-  - [ ] 1.3.5: Add logging for forwarding events
 
-- [ ] **Task 1.4: Update data models** (2-3 hours)
-  - [ ] 1.4.1: Add routing fields to Peer model (hopCount, lastForwardTime)
-  - [ ] 1.4.2: Add forwarding metrics to MeshEvent (messagesForwarded, messagesCached)
-  - [ ] 1.4.3: Update Message model to expose routing info (ttl, hopCount, senderId)
-  - [ ] 1.4.4: Update API documentation with new fields
+- [x] **Task 1.4: Update data models** ✅ (2 hours)
+  - [x] 1.4.1: Add routing fields to Peer model (lastForwardTime) ✅
+    - ✅ Added `lastForwardTime` field to track message forwarding timestamps
+    - ✅ `hopCount` field already existed
+    - ✅ Updated `fromMap()` and `toMap()` serialization
+  - [x] 1.4.2: Add forwarding metrics to MeshEvent ✅
+    - ✅ Added `forwardingMetrics` event type to `MeshEventType` enum
+    - ✅ Added `MeshEvent.forwardingMetrics()` factory constructor
+    - ✅ Added getter properties: `messagesForwarded`, `messagesCached`, `cacheHits`, `cacheMisses`
+  - [x] 1.4.3: Message model routing fields ✅
+    - ✅ All routing fields already exposed (`ttl`, `hopCount`, `senderId`, `messageId`, `isForwarded`)
+  - [x] 1.4.4: Update API documentation ✅
+    - ✅ Updated PROMPT.md with new Peer and MeshEvent fields
+    - ✅ Documented Phase 2 routing fields in data models section
 
 - [ ] **Task 1.5: Test multi-hop routing** (4-6 hours)
   - [ ] 1.5.1: Setup 3-4 physical devices for testing
@@ -723,7 +767,7 @@ Choose the appropriate license for your use case.
   - ✅ GATT server and client dual role architecture
   - ✅ Device address validation and GATT cache management
 
-**Phase 2 Progress (60% Complete):**
+**Phase 2 Progress (85% Complete):**
 - ✅ **Task 1.1**: Routing Architecture Design (ROUTING_ARCHITECTURE.md - 999 lines)
 - ✅ **Task 1.2**: MessageHeader Implementation (1,677 lines code, 42 tests passing)
   - ✅ Android: MessageHeader.kt + tests
@@ -731,16 +775,23 @@ Choose the appropriate license for your use case.
   - ✅ Dart: MessageHeader.dart + tests
   - ✅ Cross-platform binary compatibility verified
   - ✅ Message refactoring complete (encapsulation pattern)
-- ⏳ **Task 1.3**: Forwarding Logic Implementation (NEXT)
-- ⏳ **Task 1.4**: Data Model Updates
+  - ✅ Device ID redesign: UUID-based system (DeviceIdManager on all platforms)
+- ✅ **Task 1.3**: Forwarding Logic Implementation (COMPLETE)
+  - ✅ MessageCache with composite keys (senderId, messageId)
+  - ✅ MessageHeader parsing in all reception paths
+  - ✅ Forwarding decision logic with TTL and deduplication
+  - ✅ forwardMessage() methods on both platforms
+  - ✅ Comprehensive logging for debugging
+  - ✅ iOS bidirectional reception (central + peripheral paths)
+- ⏳ **Task 1.4**: Data Model Updates (NEXT)
 - ⏳ **Task 1.5**: Multi-hop Testing
 
 **Next Immediate Steps:**
-1. Implement message cache for deduplication (LRU cache, 1000 entries)
-2. Update message receiving to parse MessageHeader
-3. Implement forwarding decision logic (TTL check, deduplication)
-4. Forward messages to peers (decrement TTL, increment hop count)
-5. Add comprehensive logging for forwarding events
+1. Update Dart Message model to expose routing info (ttl, hopCount, senderId)
+2. Add routing fields to Peer model (hopCount, lastForwardTime)
+3. Add forwarding metrics to MeshEvent (messagesForwarded, messagesCached)
+4. Update API documentation with new fields
+5. Physical device testing (3+ devices) to verify multi-hop routing
 
 **Key Achievements:**
 - ✅ 16 comprehensive technical documentation files
