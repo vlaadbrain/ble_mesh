@@ -18,6 +18,9 @@ enum MeshEventType {
   /// A message was received
   messageReceived,
 
+  /// Message forwarding metrics updated (Phase 2)
+  forwardingMetrics,
+
   /// An error occurred
   error,
 }
@@ -61,5 +64,41 @@ class MeshEvent {
   String toString() {
     return 'MeshEvent(type: $type, message: $message, data: $data)';
   }
+
+  /// Create a forwarding metrics event (Phase 2)
+  ///
+  /// [messagesForwarded] - Total number of messages forwarded
+  /// [messagesCached] - Total number of messages in cache
+  /// [cacheHits] - Number of duplicate messages detected
+  /// [cacheMisses] - Number of new messages processed
+  factory MeshEvent.forwardingMetrics({
+    required int messagesForwarded,
+    required int messagesCached,
+    int? cacheHits,
+    int? cacheMisses,
+  }) {
+    return MeshEvent(
+      type: MeshEventType.forwardingMetrics,
+      message: 'Forwarding metrics updated',
+      data: {
+        'messagesForwarded': messagesForwarded,
+        'messagesCached': messagesCached,
+        if (cacheHits != null) 'cacheHits': cacheHits,
+        if (cacheMisses != null) 'cacheMisses': cacheMisses,
+      },
+    );
+  }
+
+  /// Get messages forwarded count from forwarding metrics event
+  int? get messagesForwarded => data?['messagesForwarded'] as int?;
+
+  /// Get messages cached count from forwarding metrics event
+  int? get messagesCached => data?['messagesCached'] as int?;
+
+  /// Get cache hits count from forwarding metrics event
+  int? get cacheHits => data?['cacheHits'] as int?;
+
+  /// Get cache misses count from forwarding metrics event
+  int? get cacheMisses => data?['cacheMisses'] as int?;
 }
 

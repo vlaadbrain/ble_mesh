@@ -18,6 +18,9 @@ class Peer {
   /// Number of hops to reach this peer (0 = direct connection)
   final int hopCount;
 
+  /// Last time a message was forwarded to/from this peer (for routing metrics)
+  final DateTime? lastForwardTime;
+
   const Peer({
     required this.id,
     required this.nickname,
@@ -25,6 +28,7 @@ class Peer {
     required this.lastSeen,
     required this.isConnected,
     this.hopCount = 0,
+    this.lastForwardTime,
   });
 
   /// Create a Peer from a map (for method channel deserialization)
@@ -36,6 +40,9 @@ class Peer {
       lastSeen: DateTime.fromMillisecondsSinceEpoch(map['lastSeen'] as int),
       isConnected: map['isConnected'] as bool,
       hopCount: map['hopCount'] as int? ?? 0,
+      lastForwardTime: map['lastForwardTime'] != null
+          ? DateTime.fromMillisecondsSinceEpoch(map['lastForwardTime'] as int)
+          : null,
     );
   }
 
@@ -48,6 +55,7 @@ class Peer {
       'lastSeen': lastSeen.millisecondsSinceEpoch,
       'isConnected': isConnected,
       'hopCount': hopCount,
+      'lastForwardTime': lastForwardTime?.millisecondsSinceEpoch,
     };
   }
 

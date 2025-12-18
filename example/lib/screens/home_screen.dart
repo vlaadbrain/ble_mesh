@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:ble_mesh/ble_mesh.dart';
 import 'chat_screen.dart';
 import 'settings_screen.dart';
+import 'mesh_events_screen.dart';
 import '../services/permission_service.dart';
 import '../widgets/permission_dialog.dart';
 
@@ -166,6 +167,17 @@ class _HomeScreenState extends State<HomeScreen> {
         builder: (context) => ChatScreen(
           bleMesh: _bleMesh,
           nickname: _nickname,
+        ),
+      ),
+    );
+  }
+
+  void _navigateToMeshEvents() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => MeshEventsScreen(
+          bleMesh: _bleMesh,
         ),
       ),
     );
@@ -370,6 +382,17 @@ class _HomeScreenState extends State<HomeScreen> {
               onPressed: _isMeshStarted ? _navigateToChat : null,
               icon: const Icon(Icons.chat),
               label: const Text('Open Chat'),
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.all(16),
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // Mesh Events Button
+            ElevatedButton.icon(
+              onPressed: _navigateToMeshEvents,
+              icon: const Icon(Icons.event_note),
+              label: const Text('View Mesh Events'),
               style: ElevatedButton.styleFrom(
                 padding: const EdgeInsets.all(16),
               ),

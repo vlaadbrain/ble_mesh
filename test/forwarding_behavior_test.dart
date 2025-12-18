@@ -1,6 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ble_mesh/models/message_header.dart';
-import 'package:ble_mesh/models/message.dart';
 
 void main() {
   group('Message Forwarding Behavior', () {
@@ -492,7 +491,6 @@ void main() {
         // In a fully connected network of N devices,
         // each message is received N-1 times
         final networkSize = 5;
-        final messageId = 999;
         final receptions = <String, bool>{};
 
         // Simulate each device receiving the message
