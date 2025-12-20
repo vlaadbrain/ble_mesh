@@ -24,12 +24,14 @@ class BleMeshPlugin : FlutterPlugin, MethodCallHandler {
     private lateinit var peerConnectedEventChannel: EventChannel
     private lateinit var peerDisconnectedEventChannel: EventChannel
     private lateinit var meshEventChannel: EventChannel
+    private lateinit var discoveredPeersEventChannel: EventChannel
 
     // Event stream handlers
     private var messageStreamHandler: EventStreamHandler? = null
     private var peerConnectedStreamHandler: EventStreamHandler? = null
     private var peerDisconnectedStreamHandler: EventStreamHandler? = null
     private var meshEventStreamHandler: EventStreamHandler? = null
+    private var discoveredPeersStreamHandler: EventStreamHandler? = null
 
     // Bluetooth mesh service
     private var meshService: BluetoothMeshService? = null
@@ -59,6 +61,10 @@ class BleMeshPlugin : FlutterPlugin, MethodCallHandler {
         meshEventStreamHandler = EventStreamHandler()
         meshEventChannel.setStreamHandler(meshEventStreamHandler)
 
+        discoveredPeersEventChannel = EventChannel(flutterPluginBinding.binaryMessenger, "ble_mesh/discovered_peers")
+        discoveredPeersStreamHandler = EventStreamHandler()
+        discoveredPeersEventChannel.setStreamHandler(discoveredPeersStreamHandler)
+
         Log.d(tag, "BleMeshPlugin attached to engine")
     }
 
@@ -81,6 +87,39 @@ class BleMeshPlugin : FlutterPlugin, MethodCallHandler {
             }
             "getConnectedPeers" -> {
                 handleGetConnectedPeers(result)
+            }
+            "startDiscovery" -> {
+                handleStartDiscovery(result)
+            }
+            "stopDiscovery" -> {
+                handleStopDiscovery(result)
+            }
+            "getDiscoveredPeers" -> {
+                handleGetDiscoveredPeers(result)
+            }
+            "connectToPeer" -> {
+                handleConnectToPeer(call, result)
+            }
+            "disconnectFromPeer" -> {
+                handleDisconnectFromPeer(call, result)
+            }
+            "getPeerConnectionState" -> {
+                handleGetPeerConnectionState(call, result)
+            }
+            "blockPeer" -> {
+                handleBlockPeer(call, result)
+            }
+            "unblockPeer" -> {
+                handleUnblockPeer(call, result)
+            }
+            "isPeerBlocked" -> {
+                handleIsPeerBlocked(call, result)
+            }
+            "getBlockedPeers" -> {
+                handleGetBlockedPeers(result)
+            }
+            "clearBlocklist" -> {
+                handleClearBlocklist(result)
             }
             else -> {
                 result.notImplemented()
@@ -167,9 +206,164 @@ class BleMeshPlugin : FlutterPlugin, MethodCallHandler {
         }
     }
 
+    private fun handleStartDiscovery(result: Result) {
+        try {
+            if (meshService == null && context != null) {
+                meshService = BluetoothMeshService(context!!)
+                setupMeshServiceCallbacks()
+            }
+
+            meshService?.startDiscovery()
+            Log.d(tag, "Started discovery")
+            result.success(null)
+        } catch (e: Exception) {
+            Log.e(tag, "Error starting discovery", e)
+            result.error("START_DISCOVERY_ERROR", e.message, null)
+        }
+    }
+
+    private fun handleStopDiscovery(result: Result) {
+        try {
+            meshService?.stopDiscovery()
+            Log.d(tag, "Stopped discovery")
+            result.success(null)
+        } catch (e: Exception) {
+            Log.e(tag, "Error stopping discovery", e)
+            result.error("STOP_DISCOVERY_ERROR", e.message, null)
+        }
+    }
+
+    private fun handleGetDiscoveredPeers(result: Result) {
+        try {
+            val peers = meshService?.getDiscoveredPeers() ?: emptyList()
+            val peerMaps = peers.map { it.toMap() }
+            result.success(peerMaps)
+        } catch (e: Exception) {
+            Log.e(tag, "Error getting discovered peers", e)
+            result.error("GET_DISCOVERED_PEERS_ERROR", e.message, null)
+        }
+    }
+
+    private fun handleConnectToPeer(call: MethodCall, result: Result) {
+        try {
+            val senderId = call.argument<String>("senderId")
+            if (senderId == null) {
+                result.error("INVALID_ARGUMENT", "senderId is required", null)
+                return
+            }
+
+            val success = meshService?.connectToPeer(senderId) ?: false
+            result.success(success)
+        } catch (e: Exception) {
+            Log.e(tag, "Error connecting to peer", e)
+            result.error("CONNECT_PEER_ERROR", e.message, null)
+        }
+    }
+
+    private fun handleDisconnectFromPeer(call: MethodCall, result: Result) {
+        try {
+            val senderId = call.argument<String>("senderId")
+            if (senderId == null) {
+                result.error("INVALID_ARGUMENT", "senderId is required", null)
+                return
+            }
+
+            val success = meshService?.disconnectFromPeer(senderId) ?: false
+            result.success(success)
+        } catch (e: Exception) {
+            Log.e(tag, "Error disconnecting from peer", e)
+            result.error("DISCONNECT_PEER_ERROR", e.message, null)
+        }
+    }
+
+    private fun handleGetPeerConnectionState(call: MethodCall, result: Result) {
+        try {
+            val senderId = call.argument<String>("senderId")
+            if (senderId == null) {
+                result.error("INVALID_ARGUMENT", "senderId is required", null)
+                return
+            }
+
+            val state = meshService?.getPeerConnectionState(senderId)
+            result.success(state)
+        } catch (e: Exception) {
+            Log.e(tag, "Error getting peer connection state", e)
+            result.error("GET_PEER_STATE_ERROR", e.message, null)
+        }
+    }
+
+    private fun handleBlockPeer(call: MethodCall, result: Result) {
+        try {
+            val senderId = call.argument<String>("senderId")
+            if (senderId == null) {
+                result.error("INVALID_ARGUMENT", "senderId is required", null)
+                return
+            }
+
+            val success = meshService?.blockPeer(senderId) ?: false
+            result.success(success)
+        } catch (e: Exception) {
+            Log.e(tag, "Error blocking peer", e)
+            result.error("BLOCK_PEER_ERROR", e.message, null)
+        }
+    }
+
+    private fun handleUnblockPeer(call: MethodCall, result: Result) {
+        try {
+            val senderId = call.argument<String>("senderId")
+            if (senderId == null) {
+                result.error("INVALID_ARGUMENT", "senderId is required", null)
+                return
+            }
+
+            val success = meshService?.unblockPeer(senderId) ?: false
+            result.success(success)
+        } catch (e: Exception) {
+            Log.e(tag, "Error unblocking peer", e)
+            result.error("UNBLOCK_PEER_ERROR", e.message, null)
+        }
+    }
+
+    private fun handleIsPeerBlocked(call: MethodCall, result: Result) {
+        try {
+            val senderId = call.argument<String>("senderId")
+            if (senderId == null) {
+                result.error("INVALID_ARGUMENT", "senderId is required", null)
+                return
+            }
+
+            val isBlocked = meshService?.isPeerBlocked(senderId) ?: false
+            result.success(isBlocked)
+        } catch (e: Exception) {
+            Log.e(tag, "Error checking if peer is blocked", e)
+            result.error("IS_PEER_BLOCKED_ERROR", e.message, null)
+        }
+    }
+
+    private fun handleGetBlockedPeers(result: Result) {
+        try {
+            val blockedPeers = meshService?.getBlockedPeers() ?: emptyList()
+            result.success(blockedPeers)
+        } catch (e: Exception) {
+            Log.e(tag, "Error getting blocked peers", e)
+            result.error("GET_BLOCKED_PEERS_ERROR", e.message, null)
+        }
+    }
+
+    private fun handleClearBlocklist(result: Result) {
+        try {
+            meshService?.clearBlocklist()
+            result.success(null)
+        } catch (e: Exception) {
+            Log.e(tag, "Error clearing blocklist", e)
+            result.error("CLEAR_BLOCKLIST_ERROR", e.message, null)
+        }
+    }
+
     private fun setupMeshServiceCallbacks() {
         meshService?.onPeerDiscovered = { peer ->
-            // Peer discovered events are sent through mesh events
+            // Send discovered peer to stream
+            discoveredPeersStreamHandler?.sendEvent(peer.toMap())
         }
 
         meshService?.onPeerConnected = { peer ->

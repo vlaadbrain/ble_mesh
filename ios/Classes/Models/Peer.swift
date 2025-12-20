@@ -1,52 +1,100 @@
 import Foundation
 import CoreBluetooth
 
+/// Connection state of a peer
+enum PeerConnectionState: String {
+    case discovered
+    case connecting
+    case connected
+    case disconnecting
+    case disconnected
+}
+
 /// Represents a peer in the BLE mesh network
 struct Peer {
-    let id: String
+    let senderId: String?           // Stable UUID identifier (6-byte compact format)
+    let connectionId: String        // CBPeripheral UUID for connections
     let nickname: String
     let rssi: Int
     let lastSeen: Date
-    let isConnected: Bool
+    let connectionState: PeerConnectionState
     let hopCount: Int
+    let lastForwardTime: Date?
+    let isBlocked: Bool
     let peripheral: CBPeripheral?
 
     init(
-        id: String,
+        senderId: String? = nil,
+        connectionId: String,
         nickname: String,
         rssi: Int = 0,
         lastSeen: Date = Date(),
-        isConnected: Bool = false,
+        connectionState: PeerConnectionState = .discovered,
         hopCount: Int = 0,
+        lastForwardTime: Date? = nil,
+        isBlocked: Bool = false,
         peripheral: CBPeripheral? = nil
     ) {
-        self.id = id
+        self.senderId = senderId
+        self.connectionId = connectionId
         self.nickname = nickname
         self.rssi = rssi
         self.lastSeen = lastSeen
-        self.isConnected = isConnected
+        self.connectionState = connectionState
         self.hopCount = hopCount
+        self.lastForwardTime = lastForwardTime
+        self.isBlocked = isBlocked
         self.peripheral = peripheral
+    }
+
+    /// Convenience property for backward compatibility (returns connectionId)
+    var id: String {
+        return connectionId
+    }
+
+    /// Check if peer can be connected to
+    var canConnect: Bool {
+        return senderId != nil &&
+               connectionState == .discovered &&
+               !isBlocked
     }
 
     /// Convert to a dictionary for sending to Flutter
     func toMap() -> [String: Any] {
-        return [
-            "id": id,
+        var map: [String: Any] = [
+            "connectionId": connectionId,
+            "id": connectionId,  // For backward compatibility
             "nickname": nickname,
             "rssi": rssi,
             "lastSeen": Int64(lastSeen.timeIntervalSince1970 * 1000),
-            "isConnected": isConnected,
-            "hopCount": hopCount
+            "connectionState": connectionState.rawValue,
+            "hopCount": hopCount,
+            "isBlocked": isBlocked
         ]
+
+        if let senderId = senderId {
+            map["senderId"] = senderId
+        }
+
+        if let lastForwardTime = lastForwardTime {
+            map["lastForwardTime"] = Int64(lastForwardTime.timeIntervalSince1970 * 1000)
+        }
+
+        return map
     }
 
     /// Create a Peer from a CBPeripheral
-    static func fromPeripheral(_ peripheral: CBPeripheral, rssi: Int = 0) -> Peer {
+    static func fromPeripheral(
+        _ peripheral: CBPeripheral,
+        rssi: Int = 0,
+        senderId: String? = nil
+    ) -> Peer {
         return Peer(
-            id: peripheral.identifier.uuidString,
+            senderId: senderId,
+            connectionId: peripheral.identifier.uuidString,
             nickname: peripheral.name ?? "Unknown",
             rssi: rssi,
+            connectionState: .discovered,
             peripheral: peripheral
         )
     }

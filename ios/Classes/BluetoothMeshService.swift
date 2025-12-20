@@ -6,13 +6,17 @@ import CoreBluetooth
 class BluetoothMeshService {
     private let tag = "BluetoothMeshService"
 
+    // Device identity manager
+    private let deviceIdManager = DeviceIdManager()
+
     // Components
     private let bleScanner = BleScanner()
-    private let bleAdvertiser = BleAdvertiser()
+    private lazy var bleAdvertiser = BleAdvertiser(deviceIdManager: deviceIdManager)
     private let blePeripheralServer = BlePeripheralServer()
     private let peerManager = PeerManager()
     private let connectionManager = BleConnectionManager()
     private let serviceManager = ServiceManager()
+    private let blocklistManager = BlocklistManager()
 
     // Phase 2: Message deduplication cache
     private let messageCache = MessageCache(maxSize: 1000, expirationTimeInterval: 5 * 60) // 5 minutes
@@ -127,6 +131,106 @@ class BluetoothMeshService {
         return peerManager.getDiscoveredPeers()
     }
 
+    /// Start discovery mode (scanning without auto-connect)
+    /// Discovered peers will NOT be automatically connected.
+    /// Use connectToPeer(senderId:) to manually connect to a discovered peer.
+    func startDiscovery() {
+        print("[\(tag)] Starting discovery mode")
+
+        // Start scanning - peers will only be added to discovered list
+        // Manual connection control via connectToPeer() is required
+        bleScanner.startScanning()
+    }
+
+    /// Stop discovery mode
+    func stopDiscovery() {
+        print("[\(tag)] Stopping discovery mode")
+        bleScanner.stopScanning()
+    }
+
+    // MARK: - Manual Connection Control
+
+    /// Manually connect to a peer by senderId
+    func connectToPeer(senderId: String) -> Bool {
+        print("[\(tag)] Manual connect requested for senderId: \(senderId)")
+
+        // Find peer by senderId
+        guard let peer = peerManager.getPeerBySenderId(senderId) else {
+            print("[\(tag)] Error: Peer with senderId \(senderId) not found")
+            return false
+        }
+
+        // Check if peer has peripheral reference
+        guard let peripheral = peer.peripheral else {
+            print("[\(tag)] Error: Peer \(senderId) has no peripheral reference")
+            return false
+        }
+
+        // Check if already connected
+        if peer.connectionState == .connected {
+            print("[\(tag)] Peer \(senderId) is already connected")
+            return true
+        }
+
+        // Check max connections
+        let connectedCount = peerManager.getConnectedPeerCount()
+        if connectedCount >= BleConstants.maxConnections {
+            print("[\(tag)] Cannot connect: maximum connections (\(BleConstants.maxConnections)) reached")
+            return false
+        }
+
+        // Update state to connecting
+        peerManager.updatePeerConnectionState(senderId, state: .connecting)
+        print("[\(tag)] Connecting to peer \(senderId) (\(peer.nickname))...")
+
+        // Initiate connection
+        connectionManager.connectToPeripheral(peripheral)
+
+        return true
+    }
+
+    /// Manually disconnect from a peer by senderId
+    func disconnectFromPeer(senderId: String) -> Bool {
+        print("[\(tag)] Manual disconnect requested for senderId: \(senderId)")
+
+        // Find peer by senderId
+        guard let peer = peerManager.getPeerBySenderId(senderId) else {
+            print("[\(tag)] Error: Peer with senderId \(senderId) not found")
+            return false
+        }
+
+        // Check if peer is connected
+        guard peer.connectionState == .connected else {
+            print("[\(tag)] Peer \(senderId) is not connected (state: \(peer.connectionState.rawValue))")
+            return false
+        }
+
+        // Check if peer has peripheral reference
+        guard let peripheral = peer.peripheral else {
+            print("[\(tag)] Error: Peer \(senderId) has no peripheral reference")
+            return false
+        }
+
+        // Update state to disconnecting
+        peerManager.updatePeerConnectionState(senderId, state: .disconnecting)
+        print("[\(tag)] Disconnecting from peer \(senderId) (\(peer.nickname))...")
+
+        // Initiate disconnection
+        connectionManager.disconnectPeripheral(peripheral.identifier.uuidString)
+
+        return true
+    }
+
+    /// Get connection state of a peer by senderId
+    func getPeerConnectionState(senderId: String) -> String? {
+        guard let peer = peerManager.getPeerBySenderId(senderId) else {
+            print("[\(tag)] Peer with senderId \(senderId) not found")
+            return nil
+        }
+
+        return peer.connectionState.rawValue
+    }
+
     /// Check if mesh is running
     func isRunningStatus() -> Bool {
         return isRunning
@@ -190,15 +294,19 @@ class BluetoothMeshService {
         // Scanner callbacks
         bleScanner.onDeviceDiscovered = { [weak self] peer in
             guard let self = self else { return }
+
+            // Check if peer is blocked
+            if let senderId = peer.senderId, self.blocklistManager.isBlocked(senderId) {
+                print("[\(self.tag)] Ignoring blocked peer: \(senderId) (\(peer.nickname))")
+                return
+            }
+
             self.peerManager.addDiscoveredPeer(peer)
 
-            // Auto-connect to discovered peers if not at max connections
-            if self.connectionManager.getConnectedPeripherals().count < BleConstants.maxConnections &&
-               !self.connectionManager.isConnected(peer.id),
-               let peripheral = peer.peripheral {
-                print("[\(self.tag)] Auto-connecting to discovered peer: \(peer.id)")
-                self.connectionManager.connectToPeripheral(peripheral)
-            }
+            // Manual connection control: peers are only connected when explicitly requested
+            // via connectToPeer(senderId). Auto-connection has been removed to give
+            // applications full control over connection decisions.
+            print("[\(self.tag)] Peer discovered: \(peer.id) (\(peer.nickname)), state: \(peer.connectionState.rawValue)")
         }
 
         bleScanner.onScanError = { [weak self] errorCode, message in
@@ -289,6 +397,12 @@ class BluetoothMeshService {
                 let peer = self.peerManager.getPeer(identifier)
                 if let message = Message.fromData(data, senderNickname: peer?.nickname ?? "Unknown") {
                     print("[\(self.tag)] Received message: senderId=\(message.senderId), messageId=\(message.messageId), ttl=\(message.ttl), hopCount=\(message.hopCount), content=\(message.content)")
+
+                    // Check if message is from blocked peer
+                    if self.blocklistManager.isBlocked(message.senderId) {
+                        print("[\(self.tag)] Ignoring message from blocked peer: \(message.senderId)")
+                        return
+                    }
 
                     // Phase 2: Check for duplicate (deduplication) using composite key
                     if self.messageCache.hasMessage(senderId: message.senderId, messageId: message.messageId) {
@@ -457,6 +571,61 @@ class BluetoothMeshService {
         print("[\(tag)] Message forwarded to \(forwardCount) peer(s)")
     }
 
+    // MARK: - Blocklist Management
+
+    /// Block a peer by sender UUID
+    ///
+    /// - Parameter senderId: The sender UUID to block
+    /// - Returns: true if the peer was blocked successfully
+    func blockPeer(_ senderId: String) -> Bool {
+        let success = blocklistManager.blockPeer(senderId)
+
+        if success {
+            // Disconnect from peer if currently connected
+            if let peer = peerManager.getPeerBySenderId(senderId),
+               connectionManager.isConnected(peer.connectionId) {
+                print("[\(tag)] Disconnecting from blocked peer: \(senderId)")
+                _ = disconnectFromPeer(senderId)
+            }
+
+            // Remove from discovered peers
+            if let peer = peerManager.getPeerBySenderId(senderId) {
+                peerManager.removePeer(peer.connectionId)
+            }
+        }
+
+        return success
+    }
+
+    /// Unblock a peer by sender UUID
+    ///
+    /// - Parameter senderId: The sender UUID to unblock
+    /// - Returns: true if the peer was unblocked successfully
+    func unblockPeer(_ senderId: String) -> Bool {
+        return blocklistManager.unblockPeer(senderId)
+    }
+
+    /// Check if a peer is blocked
+    ///
+    /// - Parameter senderId: The sender UUID to check
+    /// - Returns: true if the peer is blocked
+    func isPeerBlocked(_ senderId: String) -> Bool {
+        return blocklistManager.isBlocked(senderId)
+    }
+
+    /// Get list of all blocked peer sender UUIDs
+    ///
+    /// - Returns: Array of blocked sender UUIDs
+    func getBlockedPeers() -> [String] {
+        return blocklistManager.getBlockedPeers()
+    }
+
+    /// Clear the entire blocklist
+    func clearBlocklist() {
+        blocklistManager.clearBlocklist()
+        print("[\(tag)] Blocklist cleared")
+    }
+
     /// Clean up resources
     func cleanup() {
         stop()
@@ -464,6 +633,7 @@ class BluetoothMeshService {
         bleAdvertiser.cleanup()
         connectionManager.cleanup()
         peerManager.cleanup()
+        blocklistManager.cleanup()
 
         scanTimer?.invalidate()
         scanTimer = nil

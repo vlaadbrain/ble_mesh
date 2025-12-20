@@ -139,10 +139,26 @@ class BleScanner(private val context: Context) {
         val device = result.device
         val rssi = result.rssi
 
-        Log.d(tag, "Discovered device: ${device.address}, RSSI: $rssi")
+        // Extract senderId from service data
+        val serviceData = result.scanRecord?.getServiceData(
+            ParcelUuid(BleConstants.MESH_SERVICE_UUID)
+        )
 
-        // Create peer from device
-        val peer = Peer.fromDevice(device, rssi)
+        val senderId = if (serviceData != null && serviceData.size >= 6) {
+            // Convert first 6 bytes to senderId string
+            DeviceIdManager.compactIdToString(serviceData.sliceArray(0..5))
+        } else {
+            null  // Will be obtained via handshake after connection
+        }
+
+        if (senderId != null) {
+            Log.d(tag, "Discovered device: ${device.address}, RSSI: $rssi, senderId: $senderId")
+        } else {
+            Log.d(tag, "Discovered device: ${device.address}, RSSI: $rssi (senderId not in advertisement)")
+        }
+
+        // Create peer from device with senderId
+        val peer = Peer.fromDevice(device, rssi, senderId)
 
         // Notify callback
         onDeviceDiscovered?.invoke(peer)

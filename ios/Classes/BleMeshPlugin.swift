@@ -12,12 +12,14 @@ public class BleMeshPlugin: NSObject, FlutterPlugin {
     private var peerConnectedEventChannel: FlutterEventChannel?
     private var peerDisconnectedEventChannel: FlutterEventChannel?
     private var meshEventChannel: FlutterEventChannel?
+    private var discoveredPeersEventChannel: FlutterEventChannel?
 
     // Event stream handlers
     private var messageStreamHandler: EventStreamHandler?
     private var peerConnectedStreamHandler: EventStreamHandler?
     private var peerDisconnectedStreamHandler: EventStreamHandler?
     private var meshEventStreamHandler: EventStreamHandler?
+    private var discoveredPeersStreamHandler: EventStreamHandler?
 
     // Bluetooth mesh service
     private var meshService: BluetoothMeshService?
@@ -51,6 +53,11 @@ public class BleMeshPlugin: NSObject, FlutterPlugin {
         meshEventChannel.setStreamHandler(instance.meshEventStreamHandler)
         instance.meshEventChannel = meshEventChannel
 
+        let discoveredPeersEventChannel = FlutterEventChannel(name: "ble_mesh/discovered_peers", binaryMessenger: registrar.messenger())
+        instance.discoveredPeersStreamHandler = EventStreamHandler()
+        discoveredPeersEventChannel.setStreamHandler(instance.discoveredPeersStreamHandler)
+        instance.discoveredPeersEventChannel = discoveredPeersEventChannel
+
         print("[BleMeshPlugin] Plugin registered")
     }
 
@@ -73,6 +80,39 @@ public class BleMeshPlugin: NSObject, FlutterPlugin {
 
         case "getConnectedPeers":
             handleGetConnectedPeers(result: result)
+
+        case "startDiscovery":
+            handleStartDiscovery(result: result)
+
+        case "stopDiscovery":
+            handleStopDiscovery(result: result)
+
+        case "getDiscoveredPeers":
+            handleGetDiscoveredPeers(result: result)
+
+        case "connectToPeer":
+            handleConnectToPeer(call, result: result)
+
+        case "disconnectFromPeer":
+            handleDisconnectFromPeer(call, result: result)
+
+        case "getPeerConnectionState":
+            handleGetPeerConnectionState(call, result: result)
+
+        case "blockPeer":
+            handleBlockPeer(call, result: result)
+
+        case "unblockPeer":
+            handleUnblockPeer(call, result: result)
+
+        case "isPeerBlocked":
+            handleIsPeerBlocked(call, result: result)
+
+        case "getBlockedPeers":
+            handleGetBlockedPeers(result: result)
+
+        case "clearBlocklist":
+            handleClearBlocklist(result: result)
 
         default:
             result(FlutterMethodNotImplemented)
@@ -138,9 +178,149 @@ public class BleMeshPlugin: NSObject, FlutterPlugin {
         result(peerMaps)
     }
 
+    private func handleStartDiscovery(result: @escaping FlutterResult) {
+        if meshService == nil {
+            meshService = BluetoothMeshService()
+            setupMeshServiceCallbacks()
+        }
+
+        meshService?.startDiscovery()
+        print("[\(tag)] Started discovery")
+        result(nil)
+    }
+
+    private func handleStopDiscovery(result: @escaping FlutterResult) {
+        meshService?.stopDiscovery()
+        print("[\(tag)] Stopped discovery")
+        result(nil)
+    }
+
+    private func handleGetDiscoveredPeers(result: @escaping FlutterResult) {
+        let peers = meshService?.getDiscoveredPeers() ?? []
+        let peerMaps = peers.map { $0.toMap() }
+        result(peerMaps)
+    }
+
+    private func handleConnectToPeer(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+        guard let args = call.arguments as? [String: Any],
+              let senderId = args["senderId"] as? String else {
+            result(FlutterError(code: "INVALID_ARGUMENTS", message: "senderId is required", details: nil))
+            return
+        }
+
+        guard let service = meshService else {
+            result(FlutterError(code: "SERVICE_NOT_INITIALIZED", message: "Mesh service not initialized", details: nil))
+            return
+        }
+
+        let success = service.connectToPeer(senderId: senderId)
+        result(success)
+    }
+
+    private func handleDisconnectFromPeer(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+        guard let args = call.arguments as? [String: Any],
+              let senderId = args["senderId"] as? String else {
+            result(FlutterError(code: "INVALID_ARGUMENTS", message: "senderId is required", details: nil))
+            return
+        }
+
+        guard let service = meshService else {
+            result(FlutterError(code: "SERVICE_NOT_INITIALIZED", message: "Mesh service not initialized", details: nil))
+            return
+        }
+
+        let success = service.disconnectFromPeer(senderId: senderId)
+        result(success)
+    }
+
+    private func handleGetPeerConnectionState(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+        guard let args = call.arguments as? [String: Any],
+              let senderId = args["senderId"] as? String else {
+            result(FlutterError(code: "INVALID_ARGUMENTS", message: "senderId is required", details: nil))
+            return
+        }
+
+        guard let service = meshService else {
+            result(FlutterError(code: "SERVICE_NOT_INITIALIZED", message: "Mesh service not initialized", details: nil))
+            return
+        }
+
+        let state = service.getPeerConnectionState(senderId: senderId)
+        result(state)
+    }
+
+    private func handleBlockPeer(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+        guard let args = call.arguments as? [String: Any],
+              let senderId = args["senderId"] as? String else {
+            result(FlutterError(code: "INVALID_ARGUMENTS", message: "senderId is required", details: nil))
+            return
+        }
+
+        guard let service = meshService else {
+            result(FlutterError(code: "SERVICE_NOT_INITIALIZED", message: "Mesh service not initialized", details: nil))
+            return
+        }
+
+        let success = service.blockPeer(senderId)
+        result(success)
+    }
+
+    private func handleUnblockPeer(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+        guard let args = call.arguments as? [String: Any],
+              let senderId = args["senderId"] as? String else {
+            result(FlutterError(code: "INVALID_ARGUMENTS", message: "senderId is required", details: nil))
+            return
+        }
+
+        guard let service = meshService else {
+            result(FlutterError(code: "SERVICE_NOT_INITIALIZED", message: "Mesh service not initialized", details: nil))
+            return
+        }
+
+        let success = service.unblockPeer(senderId)
+        result(success)
+    }
+
+    private func handleIsPeerBlocked(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+        guard let args = call.arguments as? [String: Any],
+              let senderId = args["senderId"] as? String else {
+            result(FlutterError(code: "INVALID_ARGUMENTS", message: "senderId is required", details: nil))
+            return
+        }
+
+        guard let service = meshService else {
+            result(FlutterError(code: "SERVICE_NOT_INITIALIZED", message: "Mesh service not initialized", details: nil))
+            return
+        }
+
+        let isBlocked = service.isPeerBlocked(senderId)
+        result(isBlocked)
+    }
+
+    private func handleGetBlockedPeers(result: @escaping FlutterResult) {
+        guard let service = meshService else {
+            result(FlutterError(code: "SERVICE_NOT_INITIALIZED", message: "Mesh service not initialized", details: nil))
+            return
+        }
+
+        let blockedPeers = service.getBlockedPeers()
+        result(blockedPeers)
+    }
+
+    private func handleClearBlocklist(result: @escaping FlutterResult) {
+        guard let service = meshService else {
+            result(FlutterError(code: "SERVICE_NOT_INITIALIZED", message: "Mesh service not initialized", details: nil))
+            return
+        }
+
+        service.clearBlocklist()
+        result(nil)
+    }
+
     private func setupMeshServiceCallbacks() {
         meshService?.onPeerDiscovered = { [weak self] peer in
-            // Peer discovered events are sent through mesh events
+            // Send discovered peer to stream
+            self?.discoveredPeersStreamHandler?.sendEvent(peer.toMap())
         }
 
         meshService?.onPeerConnected = { [weak self] peer in

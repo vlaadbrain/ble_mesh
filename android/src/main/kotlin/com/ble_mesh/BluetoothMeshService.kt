@@ -23,13 +23,17 @@ class BluetoothMeshService(private val context: Context) {
     private val bluetoothManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as android.bluetooth.BluetoothManager
     private val bluetoothAdapter = bluetoothManager.adapter
 
+    // Device identity manager
+    private val deviceIdManager = DeviceIdManager(context)
+
     // Components
     private val bleScanner = BleScanner(context)
-    private val bleAdvertiser = BleAdvertiser(context)
+    private val bleAdvertiser = BleAdvertiser(context, deviceIdManager)
     private val bleGattServer = BleGattServer(context)
     private val peerManager = PeerManager()
     private val connectionManager = BleConnectionManager(context)
     private val gattServiceManager = GattServiceManager()
+    private val blocklistManager = BlocklistManager(context)
 
     // Phase 2: Message deduplication cache
     private val messageCache = MessageCache(maxSize = 1000, expirationTimeMs = 5 * 60 * 1000) // 5 minutes
@@ -143,6 +147,27 @@ class BluetoothMeshService(private val context: Context) {
     }
 
     /**
+     * Start discovery mode (scanning without auto-connect)
+     * Discovered peers will NOT be automatically connected.
+     * Use connectToPeer(senderId) to manually connect to a discovered peer.
+     */
+    fun startDiscovery() {
+        Log.d(tag, "Starting discovery mode")
+
+        // Start scanning - peers will only be added to discovered list
+        // Manual connection control via connectToPeer() is required
+        bleScanner.startScanning()
+    }
+
+    /**
+     * Stop discovery mode
+     */
+    fun stopDiscovery() {
+        Log.d(tag, "Stopping discovery mode")
+        bleScanner.stopScanning()
+    }
+
+    /**
      * Get list of connected peers
      */
     fun getConnectedPeers(): List<Peer> {
@@ -154,6 +179,77 @@ class BluetoothMeshService(private val context: Context) {
      */
     fun getDiscoveredPeers(): List<Peer> {
         return peerManager.getDiscoveredPeers()
+    }
+
+    /**
+     * Connect to a peer by sender UUID
+     */
+    fun connectToPeer(senderId: String): Boolean {
+        // Find peer by senderId
+        val peer = peerManager.getPeerBySenderId(senderId)
+        if (peer == null) {
+            Log.w(tag, "Cannot connect: peer not found with senderId: $senderId")
+            return false
+        }
+
+        // Check max connections
+        if (connectionManager.getConnectedDevices().size >= BleConstants.MAX_CONNECTIONS) {
+            Log.w(tag, "Cannot connect: max connections reached (${BleConstants.MAX_CONNECTIONS})")
+            return false
+        }
+
+        // Check if already connected
+        if (connectionManager.isConnected(peer.connectionId)) {
+            Log.w(tag, "Already connected to peer: $senderId")
+            return false
+        }
+
+        // Update state to connecting
+        peerManager.updatePeerConnectionState(senderId, com.ble_mesh.models.PeerConnectionState.CONNECTING)
+
+        // Initiate connection
+        peer.device?.let { device ->
+            connectionManager.connectToDevice(device)
+            Log.d(tag, "Connecting to peer: $senderId (${peer.connectionId})")
+            return true
+        } ?: run {
+            Log.e(tag, "Cannot connect: device reference not available for peer: $senderId")
+            peerManager.updatePeerConnectionState(senderId, com.ble_mesh.models.PeerConnectionState.DISCOVERED)
+            return false
+        }
+    }
+
+    /**
+     * Disconnect from a peer by sender UUID
+     */
+    fun disconnectFromPeer(senderId: String): Boolean {
+        val peer = peerManager.getPeerBySenderId(senderId)
+        if (peer == null) {
+            Log.w(tag, "Cannot disconnect: peer not found with senderId: $senderId")
+            return false
+        }
+
+        if (!connectionManager.isConnected(peer.connectionId)) {
+            Log.w(tag, "Peer not connected: $senderId")
+            return false
+        }
+
+        // Update state to disconnecting
+        peerManager.updatePeerConnectionState(senderId, com.ble_mesh.models.PeerConnectionState.DISCONNECTING)
+
+        // Disconnect
+        connectionManager.disconnectDevice(peer.connectionId)
+        Log.d(tag, "Disconnecting from peer: $senderId (${peer.connectionId})")
+
+        return true
+    }
+
+    /**
+     * Get connection state of a peer by sender UUID
+     */
+    fun getPeerConnectionState(senderId: String): String? {
+        val peer = peerManager.getPeerBySenderId(senderId)
+        return peer?.connectionState?.name?.lowercase()
     }
 
     /**
@@ -221,17 +317,19 @@ class BluetoothMeshService(private val context: Context) {
      */
     private fun setupCallbacks() {
         // Scanner callbacks
-        bleScanner.onDeviceDiscovered = { peer ->
+        bleScanner.onDeviceDiscovered = lambda@{ peer ->
+            // Check if peer is blocked
+            if (peer.senderId != null && blocklistManager.isBlocked(peer.senderId)) {
+                Log.d(tag, "Ignoring blocked peer: ${peer.senderId} (${peer.nickname})")
+                return@lambda
+            }
+
             peerManager.addDiscoveredPeer(peer)
 
-            // Auto-connect to discovered peers if not at max connections
-            if (connectionManager.getConnectedDevices().size < BleConstants.MAX_CONNECTIONS &&
-                !connectionManager.isConnected(peer.id)) {
-                peer.device?.let { device ->
-                    Log.d(tag, "Auto-connecting to discovered peer: ${peer.id}")
-                    connectionManager.connectToDevice(device)
-                }
-            }
+            // Manual connection control: peers are only connected when explicitly requested
+            // via connectToPeer(senderId). Auto-connection has been removed to give
+            // applications full control over connection decisions.
+            Log.d(tag, "Peer discovered: ${peer.id} (${peer.nickname}), state: ${peer.connectionState}")
         }
 
         bleScanner.onScanError = { errorCode, message ->
@@ -262,7 +360,7 @@ class BluetoothMeshService(private val context: Context) {
         }
 
         // GATT Server callbacks
-        bleGattServer.onCharacteristicWriteRequest = { device, data ->
+        bleGattServer.onCharacteristicWriteRequest = lambda@{ device, data ->
             Log.d(tag, "GATT server received write from ${device.address}, size: ${data.size} bytes")
 
             // Phase 2: Deserialize message with header
@@ -271,6 +369,12 @@ class BluetoothMeshService(private val context: Context) {
 
             if (message != null) {
                 Log.d(tag, "Received message: senderId=${message.senderId}, messageId=${message.messageId}, ttl=${message.ttl}, hopCount=${message.hopCount}, content=${message.content}")
+
+                // Check if message is from blocked peer
+                if (blocklistManager.isBlocked(message.senderId)) {
+                    Log.d(tag, "Ignoring message from blocked peer: ${message.senderId}")
+                    return@lambda
+                }
 
                 // Phase 2: Check for duplicate (deduplication) using composite key
                 if (!messageCache.hasMessage(message.senderId, message.messageId)) {
@@ -497,6 +601,69 @@ class BluetoothMeshService(private val context: Context) {
         Log.d(tag, "Message forwarded to $forwardCount peer(s)")
     }
 
+    // MARK: - Blocklist Management
+
+    /**
+     * Block a peer by sender UUID
+     *
+     * @param senderId The sender UUID to block
+     * @return true if the peer was blocked successfully
+     */
+    fun blockPeer(senderId: String): Boolean {
+        val success = blocklistManager.blockPeer(senderId)
+
+        if (success) {
+            // Disconnect from peer if currently connected
+            val peer = peerManager.getPeerBySenderId(senderId)
+            if (peer != null && connectionManager.isConnected(peer.connectionId)) {
+                Log.d(tag, "Disconnecting from blocked peer: $senderId")
+                disconnectFromPeer(senderId)
+            }
+
+            // Remove from discovered peers
+            peerManager.removePeer(peer?.connectionId ?: senderId)
+        }
+
+        return success
+    }
+
+    /**
+     * Unblock a peer by sender UUID
+     *
+     * @param senderId The sender UUID to unblock
+     * @return true if the peer was unblocked successfully
+     */
+    fun unblockPeer(senderId: String): Boolean {
+        return blocklistManager.unblockPeer(senderId)
+    }
+
+    /**
+     * Check if a peer is blocked
+     *
+     * @param senderId The sender UUID to check
+     * @return true if the peer is blocked
+     */
+    fun isPeerBlocked(senderId: String): Boolean {
+        return blocklistManager.isBlocked(senderId)
+    }
+
+    /**
+     * Get list of all blocked peer sender UUIDs
+     *
+     * @return List of blocked sender UUIDs
+     */
+    fun getBlockedPeers(): List<String> {
+        return blocklistManager.getBlockedPeers()
+    }
+
+    /**
+     * Clear the entire blocklist
+     */
+    fun clearBlocklist() {
+        blocklistManager.clearBlocklist()
+        Log.d(tag, "Blocklist cleared")
+    }
+
     /**
      * Clean up resources
      */
@@ -507,6 +674,7 @@ class BluetoothMeshService(private val context: Context) {
         bleGattServer.cleanup()
         connectionManager.cleanup()
         peerManager.cleanup()
+        blocklistManager.cleanup()
         handler.removeCallbacksAndMessages(null)
 
         onPeerDiscovered = null

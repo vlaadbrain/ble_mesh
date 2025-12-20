@@ -8,12 +8,14 @@ class BleAdvertiser: NSObject {
     private var peripheralManager: CBPeripheralManager?
     private var isAdvertising = false
     private var deviceName: String = "BleMesh"
+    private let deviceIdManager: DeviceIdManager
 
     // Callbacks
     var onAdvertisingStarted: (() -> Void)?
     var onAdvertisingFailed: ((Int, String) -> Void)?
 
-    override init() {
+    init(deviceIdManager: DeviceIdManager) {
+        self.deviceIdManager = deviceIdManager
         super.init()
     }
 
@@ -44,10 +46,17 @@ class BleAdvertiser: NSObject {
         self.deviceName = deviceName
 
         // Create advertisement data
+        // Include senderId in service data for peer identification
+        let senderId = deviceIdManager.getCompactId()  // 6-byte compact device ID
         let advertisementData: [String: Any] = [
             CBAdvertisementDataServiceUUIDsKey: [BleConstants.meshServiceUUID],
-            CBAdvertisementDataLocalNameKey: deviceName
+            CBAdvertisementDataLocalNameKey: deviceName,
+            CBAdvertisementDataServiceDataKey: [
+                BleConstants.meshServiceUUID: senderId
+            ]
         ]
+
+        print("[\(tag)] Advertising with senderId: \(deviceIdManager.getCompactIdString())")
 
         // Start advertising
         peripheralManager.startAdvertising(advertisementData)

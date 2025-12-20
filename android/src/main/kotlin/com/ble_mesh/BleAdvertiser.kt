@@ -13,7 +13,10 @@ import android.util.Log
 /**
  * Handles BLE advertising to make device discoverable
  */
-class BleAdvertiser(private val context: Context) {
+class BleAdvertiser(
+    private val context: Context,
+    private val deviceIdManager: DeviceIdManager
+) {
     private val tag = "BleAdvertiser"
 
     private val bluetoothManager: BluetoothManager =
@@ -66,11 +69,16 @@ class BleAdvertiser(private val context: Context) {
             .build()
 
         // Create advertise data
+        // Include senderId in service data for peer identification
+        val senderId = deviceIdManager.getCompactId()  // 6-byte compact device ID
         val advertiseData = AdvertiseData.Builder()
             .setIncludeDeviceName(true)
             .setIncludeTxPowerLevel(false)
             .addServiceUuid(ParcelUuid(BleConstants.MESH_SERVICE_UUID))
+            .addServiceData(ParcelUuid(BleConstants.MESH_SERVICE_UUID), senderId)
             .build()
+
+        Log.d(tag, "Advertising with senderId: ${deviceIdManager.getCompactIdString()}")
 
         // Create scan response data
         val scanResponseData = AdvertiseData.Builder()

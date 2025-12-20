@@ -129,10 +129,23 @@ extension BleScanner: CBCentralManagerDelegate {
             return
         }
 
-        print("[\(tag)] Discovered device: \(peripheral.identifier.uuidString), RSSI: \(rssiValue)")
+        // Extract senderId from service data
+        var senderId: String? = nil
+        if let serviceData = advertisementData[CBAdvertisementDataServiceDataKey] as? [CBUUID: Data],
+           let meshData = serviceData[BleConstants.meshServiceUUID],
+           meshData.count >= 6 {
+            // Convert first 6 bytes to senderId string
+            senderId = DeviceIdManager.compactIdToString(meshData)
+        }
 
-        // Create peer from peripheral
-        let peer = Peer.fromPeripheral(peripheral, rssi: rssiValue)
+        if let senderId = senderId {
+            print("[\(tag)] Discovered device: \(peripheral.identifier.uuidString), RSSI: \(rssiValue), senderId: \(senderId)")
+        } else {
+            print("[\(tag)] Discovered device: \(peripheral.identifier.uuidString), RSSI: \(rssiValue) (senderId not in advertisement)")
+        }
+
+        // Create peer from peripheral with senderId
+        let peer = Peer.fromPeripheral(peripheral, rssi: rssiValue, senderId: senderId)
 
         // Notify callback
         onDeviceDiscovered?(peer)

@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:ble_mesh/ble_mesh.dart';
 import 'chat_screen.dart';
 import 'settings_screen.dart';
 import 'mesh_events_screen.dart';
+import 'peer_discovery_screen.dart';
+import 'blocklist_screen.dart';
 import '../services/permission_service.dart';
 import '../widgets/permission_dialog.dart';
 
@@ -14,7 +17,7 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  final BleMesh _bleMesh = BleMesh();
+  late final BleMesh _bleMesh;
   String _nickname = 'Anonymous';
   bool _isMeshStarted = false;
   bool _isInitialized = false;
@@ -24,6 +27,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    _bleMesh = context.read<BleMesh>();
     _loadNickname();
   }
 
@@ -165,7 +169,6 @@ class _HomeScreenState extends State<HomeScreen> {
       context,
       MaterialPageRoute(
         builder: (context) => ChatScreen(
-          bleMesh: _bleMesh,
           nickname: _nickname,
         ),
       ),
@@ -176,7 +179,30 @@ class _HomeScreenState extends State<HomeScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => MeshEventsScreen(
+        builder: (context) => MeshEventsScreen(),
+      ),
+    );
+  }
+
+  void _navigateToPeerDiscovery() {
+    if (!_isMeshStarted) {
+      _showSnackBar('Please start the mesh network first');
+      return;
+    }
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => PeerDiscoveryScreen(),
+      ),
+    );
+  }
+
+  void _navigateToBlocklist() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => BlocklistScreen(
           bleMesh: _bleMesh,
         ),
       ),
@@ -393,6 +419,28 @@ class _HomeScreenState extends State<HomeScreen> {
               onPressed: _navigateToMeshEvents,
               icon: const Icon(Icons.event_note),
               label: const Text('View Mesh Events'),
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.all(16),
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // Peer Discovery Button
+            ElevatedButton.icon(
+              onPressed: _isMeshStarted ? _navigateToPeerDiscovery : null,
+              icon: const Icon(Icons.radar),
+              label: const Text('Discover Peers'),
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.all(16),
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // Blocklist Button
+            ElevatedButton.icon(
+              onPressed: _navigateToBlocklist,
+              icon: const Icon(Icons.block),
+              label: const Text('Manage Blocklist'),
               style: ElevatedButton.styleFrom(
                 padding: const EdgeInsets.all(16),
               ),

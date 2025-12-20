@@ -35,6 +35,9 @@ dependencies:
   # For handling runtime permissions
   permission_handler: ^11.3.0
 
+  # For state management
+  provider: ^6.1.1
+
 dev_dependencies:
   integration_test:
     sdk: flutter

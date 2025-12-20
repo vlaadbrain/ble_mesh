@@ -1,69 +1,19 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:ble_mesh/ble_mesh.dart';
-import 'dart:async';
+import '../services/mesh_events_service.dart';
 
 /// Screen that displays all MeshEvents in real-time
 class MeshEventsScreen extends StatefulWidget {
-  final BleMesh bleMesh;
-
-  const MeshEventsScreen({
-    super.key,
-    required this.bleMesh,
-  });
+  const MeshEventsScreen({super.key});
 
   @override
   State<MeshEventsScreen> createState() => _MeshEventsScreenState();
 }
 
 class _MeshEventsScreenState extends State<MeshEventsScreen> {
-  final List<MeshEventEntry> _events = [];
   final ScrollController _scrollController = ScrollController();
-  StreamSubscription<MeshEvent>? _eventSubscription;
   bool _autoScroll = true;
-  int _eventCounter = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    _startListeningToEvents();
-  }
-
-  void _startListeningToEvents() {
-    _eventSubscription = widget.bleMesh.meshEventStream.listen((event) {
-      setState(() {
-        _eventCounter++;
-        _events.insert(
-          0,
-          MeshEventEntry(
-            id: _eventCounter,
-            event: event,
-            timestamp: DateTime.now(),
-          ),
-        );
-
-        // Limit to 500 events to prevent memory issues
-        if (_events.length > 500) {
-          _events.removeLast();
-        }
-      });
-
-      // Auto-scroll to top if enabled
-      if (_autoScroll && _scrollController.hasClients) {
-        _scrollController.animateTo(
-          0,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
-        );
-      }
-    });
-  }
-
-  void _clearEvents() {
-    setState(() {
-      _events.clear();
-      _eventCounter = 0;
-    });
-  }
 
   String _getEventTypeIcon(MeshEventType type) {
     switch (type) {
@@ -210,6 +160,23 @@ class _MeshEventsScreenState extends State<MeshEventsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Watch the MeshEventsService for updates
+    final meshEventsService = context.watch<MeshEventsService>();
+    final events = meshEventsService.events;
+
+    // Auto-scroll to top if enabled
+    if (_autoScroll && _scrollController.hasClients && events.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_scrollController.hasClients) {
+          _scrollController.animateTo(
+            0,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOut,
+          );
+        }
+      });
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Mesh Events'),
@@ -226,7 +193,7 @@ class _MeshEventsScreenState extends State<MeshEventsScreen> {
           IconButton(
             icon: const Icon(Icons.clear_all),
             tooltip: 'Clear events',
-            onPressed: _events.isEmpty ? null : _clearEvents,
+            onPressed: events.isEmpty ? null : () => meshEventsService.clearAll(),
           ),
         ],
       ),
@@ -235,11 +202,11 @@ class _MeshEventsScreenState extends State<MeshEventsScreen> {
           // Stats bar
           Container(
             padding: const EdgeInsets.all(16.0),
-            color: Theme.of(context).colorScheme.surfaceVariant,
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
-                _buildStatItem('Total Events', _events.length.toString()),
+                _buildStatItem('Total Events', events.length.toString()),
                 _buildStatItem('Auto-scroll', _autoScroll ? 'ON' : 'OFF'),
                 _buildStatItem('Max', '500'),
               ],
@@ -248,7 +215,7 @@ class _MeshEventsScreenState extends State<MeshEventsScreen> {
 
           // Events list
           Expanded(
-            child: _events.isEmpty
+            child: events.isEmpty
                 ? Center(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
@@ -279,9 +246,9 @@ class _MeshEventsScreenState extends State<MeshEventsScreen> {
                   )
                 : ListView.builder(
                     controller: _scrollController,
-                    itemCount: _events.length,
+                    itemCount: events.length,
                     itemBuilder: (context, index) {
-                      final entry = _events[index];
+                      final entry = events[index];
                       return _buildEventCard(entry);
                     },
                   ),
@@ -372,9 +339,9 @@ class _MeshEventsScreenState extends State<MeshEventsScreen> {
                       vertical: 4,
                     ),
                     decoration: BoxDecoration(
-                      color: color.withOpacity(0.1),
+                      color: color.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: color.withOpacity(0.3)),
+                      border: Border.all(color: color.withValues(alpha: 0.3)),
                     ),
                     child: Text(
                       '#${entry.id}',
@@ -407,15 +374,16 @@ class _MeshEventsScreenState extends State<MeshEventsScreen> {
   }
 
   void _showEventDetails(MeshEventEntry entry) {
+    final event = entry.event;
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         title: Row(
           children: [
-            Text(_getEventTypeIcon(entry.event.type)),
+            Text(_getEventTypeIcon(event.type)),
             const SizedBox(width: 8),
             Expanded(
-              child: Text(_formatEventType(entry.event.type)),
+              child: Text(_formatEventType(event.type)),
             ),
           ],
         ),
@@ -426,17 +394,17 @@ class _MeshEventsScreenState extends State<MeshEventsScreen> {
             children: [
               _buildDetailRow('Event ID', '#${entry.id}'),
               _buildDetailRow('Timestamp', entry.timestamp.toString()),
-              _buildDetailRow('Type', entry.event.type.toString()),
-              if (entry.event.message != null)
-                _buildDetailRow('Message', entry.event.message!),
-              if (entry.event.data != null && entry.event.data!.isNotEmpty) ...[
+              _buildDetailRow('Type', event.type.toString()),
+              if (event.message != null)
+                _buildDetailRow('Message', event.message!),
+              if (event.data != null && event.data!.isNotEmpty) ...[
                 const Divider(),
                 const Text(
                   'Event Data:',
                   style: TextStyle(fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 8),
-                ...entry.event.data!.entries.map((e) {
+                ...event.data!.entries.map((e) {
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 4.0),
                     child: Text(
@@ -485,22 +453,8 @@ class _MeshEventsScreenState extends State<MeshEventsScreen> {
 
   @override
   void dispose() {
-    _eventSubscription?.cancel();
     _scrollController.dispose();
     super.dispose();
   }
-}
-
-/// Helper class to store event with metadata
-class MeshEventEntry {
-  final int id;
-  final MeshEvent event;
-  final DateTime timestamp;
-
-  MeshEventEntry({
-    required this.id,
-    required this.event,
-    required this.timestamp,
-  });
 }
 

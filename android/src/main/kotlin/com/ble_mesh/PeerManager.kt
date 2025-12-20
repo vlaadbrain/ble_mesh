@@ -2,6 +2,7 @@ package com.ble_mesh
 
 import android.util.Log
 import com.ble_mesh.models.Peer
+import com.ble_mesh.models.PeerConnectionState
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -45,7 +46,7 @@ class PeerManager {
         val peer = discoveredPeers[peerId] ?: return
 
         val connectedPeer = peer.copy(
-            isConnected = true,
+            connectionState = PeerConnectionState.CONNECTED,
             lastSeen = System.currentTimeMillis()
         )
 
@@ -63,7 +64,7 @@ class PeerManager {
         val peer = connectedPeers.remove(peerId) ?: return
 
         val disconnectedPeer = peer.copy(
-            isConnected = false,
+            connectionState = PeerConnectionState.DISCONNECTED,
             lastSeen = System.currentTimeMillis()
         )
 
@@ -83,10 +84,49 @@ class PeerManager {
     }
 
     /**
-     * Get a peer by ID
+     * Get a peer by ID (connectionId)
      */
     fun getPeer(peerId: String): Peer? {
         return discoveredPeers[peerId]
+    }
+
+    /**
+     * Get a peer by sender UUID
+     */
+    fun getPeerBySenderId(senderId: String): Peer? {
+        return discoveredPeers.values.firstOrNull { it.senderId == senderId }
+    }
+
+    /**
+     * Update peer senderId (after handshake)
+     */
+    fun updatePeerSenderId(connectionId: String, senderId: String) {
+        discoveredPeers[connectionId]?.let { peer ->
+            val updatedPeer = peer.copy(senderId = senderId)
+            discoveredPeers[connectionId] = updatedPeer
+            if (connectedPeers.containsKey(connectionId)) {
+                connectedPeers[connectionId] = updatedPeer
+            }
+            Log.d(tag, "Updated peer senderId: $connectionId -> $senderId")
+        }
+    }
+
+    /**
+     * Update peer connection state
+     */
+    fun updatePeerConnectionState(senderId: String, state: com.ble_mesh.models.PeerConnectionState) {
+        val peer = getPeerBySenderId(senderId) ?: return
+        val updatedPeer = peer.copy(
+            connectionState = state,
+            lastSeen = System.currentTimeMillis()
+        )
+        discoveredPeers[peer.connectionId] = updatedPeer
+        if (state == com.ble_mesh.models.PeerConnectionState.CONNECTED) {
+            connectedPeers[peer.connectionId] = updatedPeer
+        } else if (state == com.ble_mesh.models.PeerConnectionState.DISCONNECTED) {
+            connectedPeers.remove(peer.connectionId)
+        }
+        Log.d(tag, "Updated peer state: $senderId -> ${state.name}")
     }
 
     /**
@@ -132,7 +172,7 @@ class PeerManager {
     fun removeStalePeers(timeoutMs: Long = 60000L) {
         val currentTime = System.currentTimeMillis()
         val stalePeers = discoveredPeers.filter { (_, peer) ->
-            !peer.isConnected && (currentTime - peer.lastSeen) > timeoutMs
+            peer.connectionState != PeerConnectionState.CONNECTED && (currentTime - peer.lastSeen) > timeoutMs
         }
 
         stalePeers.forEach { (peerId, _) ->

@@ -1,14 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:ble_mesh/ble_mesh.dart';
-import 'dart:async';
+import '../services/chat_service.dart';
 
 class ChatScreen extends StatefulWidget {
-  final BleMesh bleMesh;
   final String nickname;
 
   const ChatScreen({
     super.key,
-    required this.bleMesh,
     required this.nickname,
   });
 
@@ -18,25 +17,7 @@ class ChatScreen extends StatefulWidget {
 
 class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _messageController = TextEditingController();
-  final List<Message> _messages = [];
   final ScrollController _scrollController = ScrollController();
-  StreamSubscription<Message>? _messageSubscription;
-
-  @override
-  void initState() {
-    super.initState();
-    _listenToMessages();
-  }
-
-  void _listenToMessages() {
-    _messageSubscription = widget.bleMesh.messageStream.listen((message) {
-      setState(() {
-        debugPrint('THIS IS A DEBUG MESSAGE: ${message.toString()}');
-        _messages.add(message);
-      });
-      _scrollToBottom();
-    });
-  }
 
   void _scrollToBottom() {
     if (_scrollController.hasClients) {
@@ -57,31 +38,8 @@ class _ChatScreenState extends State<ChatScreen> {
     if (text.isEmpty) return;
 
     try {
-      await widget.bleMesh.sendPublicMessage(text);
-
-      // Add own message to the list
-      final messageId = DateTime.now().millisecondsSinceEpoch.toString();
-      final ownMessage = Message(
-        id: messageId,
-        senderId: 'self',
-        senderNickname: widget.nickname,
-        content: text,
-        type: MessageType.public,
-        timestamp: DateTime.now(),
-        channel: null,
-        isEncrypted: false,
-        status: DeliveryStatus.sent,
-        // Phase 2: Routing fields
-        messageId: messageId,
-        ttl: 7,
-        hopCount: 0,
-        isForwarded: false,
-      );
-
-      setState(() {
-        _messages.add(ownMessage);
-      });
-
+      final chatService = context.read<ChatService>();
+      await chatService.sendMessage(text, widget.nickname);
       _messageController.clear();
       _scrollToBottom();
     } catch (e) {
@@ -99,6 +57,10 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Watch the ChatService for updates
+    final chatService = context.watch<ChatService>();
+    final messages = chatService.messages;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Mesh Chat'),
@@ -106,9 +68,7 @@ class _ChatScreenState extends State<ChatScreen> {
           IconButton(
             icon: const Icon(Icons.delete_outline),
             onPressed: () {
-              setState(() {
-                _messages.clear();
-              });
+              chatService.clearAll();
             },
             tooltip: 'Clear messages',
           ),
@@ -118,7 +78,7 @@ class _ChatScreenState extends State<ChatScreen> {
         children: [
           // Messages List
           Expanded(
-            child: _messages.isEmpty
+            child: messages.isEmpty
                 ? Center(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
@@ -150,9 +110,9 @@ class _ChatScreenState extends State<ChatScreen> {
                 : ListView.builder(
                     controller: _scrollController,
                     padding: const EdgeInsets.all(16),
-                    itemCount: _messages.length,
+                    itemCount: messages.length,
                     itemBuilder: (context, index) {
-                      final message = _messages[index];
+                      final message = messages[index];
                       final isOwnMessage = message.senderId == 'self';
 
                       return _MessageBubble(
@@ -218,7 +178,6 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   void dispose() {
-    _messageSubscription?.cancel();
     _messageController.dispose();
     _scrollController.dispose();
     super.dispose();
