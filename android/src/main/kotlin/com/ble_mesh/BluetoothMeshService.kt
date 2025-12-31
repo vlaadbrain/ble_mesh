@@ -225,8 +225,7 @@ class BluetoothMeshService(private val context: Context) {
             return
         }
 
-        val device = connectionManager.getConnectedDevice(peerId)
-        if (device == null) {
+        if (!connectionManager.isConnected(peerId)) {
             Log.w(tag, "Cannot send private message: peer $peerId not connected")
             return
         }
@@ -246,8 +245,8 @@ class BluetoothMeshService(private val context: Context) {
             messageId = MessageHeader.generateMessageId(),
             isForwarded = false,
             isEncrypted = true,
-            encryptedData = encryptedData.toList(),
-            senderPublicKey = senderPublicKey.toList()
+            encryptedData = encryptedData.map { it.toInt() and 0xFF },
+            senderPublicKey = senderPublicKey.map { it.toInt() and 0xFF }
         )
 
         // Serialize message
@@ -256,9 +255,9 @@ class BluetoothMeshService(private val context: Context) {
         // Send to specific peer
         val gatt = connectionManager.getGatt(peerId)
         gatt?.let {
-            val msgCharacteristic = connectionManager.getCharacteristic(peerId, BleConstants.MSG_CHARACTERISTIC_UUID)
+            val msgCharacteristic = gattServiceManager.findMsgCharacteristic(it)
             if (msgCharacteristic != null) {
-                connectionManager.writeCharacteristic(it, msgCharacteristic, messageData)
+                gattServiceManager.writeCharacteristic(it, msgCharacteristic, messageData)
                 Log.d(tag, "Sent encrypted message to peer: $peerId")
             } else {
                 Log.w(tag, "MSG characteristic not found for peer: $peerId")
@@ -275,8 +274,7 @@ class BluetoothMeshService(private val context: Context) {
             return
         }
 
-        val device = connectionManager.getConnectedDevice(peerId)
-        if (device == null) {
+        if (!connectionManager.isConnected(peerId)) {
             Log.w(tag, "Cannot share public key: peer $peerId not connected")
             return
         }
@@ -296,7 +294,7 @@ class BluetoothMeshService(private val context: Context) {
             messageId = MessageHeader.generateMessageId(),
             isForwarded = false,
             isEncrypted = false,
-            senderPublicKey = publicKey.toList()
+            senderPublicKey = publicKey.map { it.toInt() and 0xFF }
         )
 
         // Serialize message
@@ -305,9 +303,9 @@ class BluetoothMeshService(private val context: Context) {
         // Send to specific peer
         val gatt = connectionManager.getGatt(peerId)
         gatt?.let {
-            val msgCharacteristic = connectionManager.getCharacteristic(peerId, BleConstants.MSG_CHARACTERISTIC_UUID)
+            val msgCharacteristic = gattServiceManager.findMsgCharacteristic(it)
             if (msgCharacteristic != null) {
-                connectionManager.writeCharacteristic(it, msgCharacteristic, messageData)
+                gattServiceManager.writeCharacteristic(it, msgCharacteristic, messageData)
                 Log.d(tag, "Shared public key with peer: $peerId")
             } else {
                 Log.w(tag, "MSG characteristic not found for peer: $peerId")

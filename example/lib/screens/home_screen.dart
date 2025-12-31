@@ -16,10 +16,10 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final BleMesh _bleMesh = BleMesh();
+  final bool _encryptionEnabled = true; // Phase 3: Track encryption status
   String _nickname = 'Anonymous';
   bool _isMeshStarted = false;
   bool _isInitialized = false;
-  bool _encryptionEnabled = true; // Phase 3: Track encryption status
   String _statusMessage = 'Not initialized';
   final List<Peer> _connectedPeers = [];
 
@@ -141,9 +141,9 @@ class _HomeScreenState extends State<HomeScreen> {
         try {
           final publicKey = await _bleMesh.getPublicKey();
           await _bleMesh.sharePublicKey(peerId: peer.id, publicKey: publicKey);
-          print('Shared public key with ${peer.nickname}');
+          debugPrint('Shared public key with ${peer.nickname}');
         } catch (e) {
-          print('Error sharing public key: $e');
+          debugPrint('Error sharing public key: $e');
         }
       }
     });

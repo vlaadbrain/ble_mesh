@@ -47,7 +47,10 @@ data class Message(
     val ttl: Int = 7,              // Time-to-live (hops remaining)
     val hopCount: Int = 0,         // Number of hops taken
     val messageId: Long = MessageHeader.generateMessageId(),  // Unique message ID
-    val isForwarded: Boolean = false  // Was this message forwarded?
+    val isForwarded: Boolean = false,  // Was this message forwarded?
+    // Phase 3: Encryption fields
+    val encryptedData: List<Int>? = null,  // Encrypted message data
+    val senderPublicKey: List<Int>? = null  // Sender's public key for encryption
 ) {
     companion object {
         /**
@@ -151,7 +154,10 @@ data class Message(
             "ttl" to ttl,
             "hopCount" to hopCount,
             "messageId" to messageId.toString(),
-            "isForwarded" to isForwarded
+            "isForwarded" to isForwarded,
+            // Phase 3: Encryption fields
+            "encryptedData" to encryptedData,
+            "senderPublicKey" to senderPublicKey
         )
     }
 }

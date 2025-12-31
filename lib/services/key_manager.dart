@@ -168,7 +168,7 @@ class KeyManager {
       _sessionKeys.remove(peerId);
     }
 
-    print('Rotated ${keysToRotate.length} session keys');
+    //print('Rotated ${keysToRotate.length} session keys');
   }
 
   /// Get identity signing public key
