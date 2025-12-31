@@ -169,8 +169,9 @@ ble_mesh/
 ### Testing Patterns
 
 16. **Platform-Specific Testing Strategy**
-    - **Dart Tests**: Business logic, data models, map serialization (62 tests)
-    - **Native Tests**: Binary serialization for BLE (Android: 27, iOS: 30)
+    - **Dart Tests**: Business logic, data models, serialization (126 tests across 7 test files)
+    - **Native Tests**: Binary serialization for BLE (Android: 51 tests in 3 test files)
+    - **iOS Tests**: Not yet implemented (planned)
     - **Rationale**: Centralized test suite at Flutter layer, native tests only for BLE-specific logic
     - **Coverage**: ~95% for MessageHeader and Message classes
     - **Benefits**: Fast iteration, consistent behavior, efficient testing
@@ -179,41 +180,81 @@ ble_mesh/
 
 ### Bluetooth Mesh Networking
 
+**✅ Implemented:**
 - **Automatic Peer Discovery**: Scan and connect to nearby BLE mesh nodes
-- **Multi-Hop Message Relay**: Messages route through intermediate peers (max 7 hops)
 - **Dual Role Operation**: Each device acts as both central and peripheral
-- **Store-and-Forward**: Messages cached for offline peers and delivered on reconnection
-- **Message Deduplication**: Bloom filters prevent message loops and duplicates
-- **Adaptive Scanning**: Battery-optimized duty cycling based on power state
+- **Message Deduplication**: LRU cache prevents message loops and duplicates
+- **TTL-Based Routing**: Time-to-live prevents infinite message propagation (max 7 hops)
+- **Multi-Hop Message Relay**: Messages route through intermediate peers with forwarding logic
+
+**⏳ Planned:**
+- **Store-and-Forward**: Messages cached for offline peers and delivered on reconnection (Phase 2.2)
+- **Adaptive Scanning**: Battery-optimized duty cycling based on power state (Phase 4)
 
 ### Encryption & Security
 
-- **Private Messages**: End-to-end encryption using modern cryptographic protocols
-  - Android: X25519 key exchange + AES-256-GCM
-  - iOS: Noise Protocol Framework with forward secrecy
+**⏳ Planned (Phase 3):**
+- **Private Messages**: End-to-end encryption using X25519 + Chacha20-Poly1305
+  - X25519 ECDH key exchange for shared secret derivation
+  - Chacha20-Poly1305 AEAD encryption (authenticated encryption)
+  - Ed25519 digital signatures for message authenticity
+  - Ephemeral session keys rotated every 24 hours
+  - Forward secrecy: compromising one session doesn't affect others
 - **Channel Encryption**: Password-protected channels with Argon2id key derivation
+  - Argon2id password hashing (memory-hard, GPU-resistant)
+  - HKDF-SHA256 for deriving channel keys
+  - Chacha20-Poly1305 for channel message encryption
+  - Password requirements: minimum 12 characters recommended
 - **Digital Signatures**: Ed25519 signatures for message authenticity
-- **Ephemeral Keys**: Fresh key pairs generated each session
-- **No Persistent Identifiers**: Privacy-first design with no phone numbers or accounts
+  - Identity key pairs generated on first launch
+  - All encrypted messages signed by sender
+  - Signatures verified before decryption
+  - Public key infrastructure for peer verification
+- **Key Management**: Secure key storage and lifecycle
+  - Identity keys stored in platform secure storage (Keychain/Keystore)
+  - Session keys kept in memory only
+  - Automatic key rotation every 24 hours
+  - Secure key deletion on logout
+
+**✅ Implemented:**
+- **No Persistent Identifiers**: Privacy-first design with UUID-based device IDs (no phone numbers or accounts)
+
+**Implementation Approach:**
+- All cryptography in Dart using `cryptography` package (v2.9.0+)
+- Hardware acceleration via `cryptography_flutter` (Android Keystore, Apple CryptoKit)
+- Pure Dart fallback for unsupported platforms
+- Cross-platform compatibility (Android, iOS, macOS, Web)
 
 ### Communication Modes
 
+**✅ Implemented:**
 1. **Public Mesh Chat**: Broadcast messages to all nearby peers
+
+**⏳ Planned (Phase 3+):**
 2. **Private Messages**: Encrypted direct messages to specific peers
 3. **Channel-Based Groups**: Topic-based group messaging (e.g., `#general`, `#tech`)
 4. **Password-Protected Channels**: Secure group conversations
 
 ### Message Management
 
-- **Message Compression**: LZ4 compression for messages >100 bytes (30-70% bandwidth savings)
-- **Message Fragmentation**: Automatic splitting of large messages for BLE packet size constraints
+**✅ Implemented:**
 - **TTL-Based Routing**: Time-to-live prevents infinite message propagation
-- **Message Acknowledgments**: Optional delivery confirmation
-- **Message History**: Optional channel-wide message retention
+- **Message Deduplication**: LRU cache with composite keys (senderId + messageId)
+- **Binary Protocol**: Efficient 20-byte header + variable payload
+
+**⏳ Planned:**
+- **Message Compression**: LZ4 compression for messages >100 bytes (Phase 4)
+- **Message Fragmentation**: Automatic splitting of large messages for BLE packet size constraints (Phase 4)
+- **Message Acknowledgments**: Optional delivery confirmation (Phase 5)
+- **Message History**: Optional channel-wide message retention (Phase 5)
 
 ### Battery Optimization
 
-- **Adaptive Power Modes**:
+**✅ Implemented:**
+- **Power Mode API**: PowerMode enum (performance, balanced, powerSaver, ultraLowPower)
+
+**⏳ Planned (Phase 4):**
+- **Adaptive Power Modes**: Automatic adjustment based on battery level
   - Performance: Full features (charging or >60% battery)
   - Balanced: Default operation (30-60% battery)
   - Power Saver: Reduced scanning (<30% battery)
@@ -223,49 +264,76 @@ ble_mesh/
 
 ## Platform-Specific Implementations
 
+### Dart/Flutter Implementation (Cross-Platform)
+
+**Technology Stack:**
+- Dart SDK
+- `cryptography` package (v2.9.0+) - Pure Dart crypto implementations
+- `cryptography_flutter` package (v2.3.4+) - Hardware acceleration
+- `flutter_secure_storage` - Secure key storage
+
+**Cryptography Algorithms:**
+- **Key Exchange**: X25519 (ECDH)
+- **Encryption**: Chacha20-Poly1305 (AEAD)
+- **Signatures**: Ed25519 (EdDSA)
+- **Password KDF**: Argon2id
+- **Key Derivation**: HKDF-SHA256
+
+**Key Components:**
+- `KeyManager`: Manages identity and session keys
+- `EncryptionService`: Handles encryption/decryption
+- `ChannelManager`: Manages encrypted channels
+- `KeyStorage`: Secure key persistence
+
+**Benefits:**
+- Pure Dart implementations work on all platforms
+- Automatic hardware acceleration on Android/iOS/macOS
+- Web Crypto API usage in browsers
+- Consistent behavior across platforms
+
 ### Android Implementation
 
 **Technology Stack:**
 - Kotlin/Java
 - Android BLE APIs (BluetoothLeScanner, BluetoothGatt)
-- BouncyCastle for cryptography
+- Cryptography handled in Dart layer
 - Kotlin Coroutines for async operations
-- Nordic BLE Library (optional)
 
 **Key Components:**
 - `BluetoothMeshService`: Core BLE mesh networking service
-- `EncryptionService`: Cryptographic operations
 - `BinaryProtocol`: Packet encoding/decoding
 - `PeerManager`: Connection and peer lifecycle management
 - `MessageRouter`: Multi-hop message routing
-- `StorageManager`: Message persistence and caching
+- `MessageCache`: Deduplication cache
 
 **Android-Specific Features:**
 - Foreground service for background operation
 - Location permissions handling (required for BLE scanning)
 - Battery optimization exemptions
 - Notification channels for persistent service
+- Android Keystore integration via `cryptography_flutter`
 
 ### iOS Implementation
 
 **Technology Stack:**
 - Swift
 - CoreBluetooth framework
-- CryptoKit/Noise Protocol Framework
+- Cryptography handled in Dart layer
 - Swift Concurrency (async/await)
 
 **Key Components:**
-- `BluetoothMeshManager`: Core BLE mesh networking
-- `NoiseProtocolHandler`: Noise Protocol encryption
+- `BluetoothMeshService`: Core BLE mesh networking
 - `MessageRouter`: Multi-hop routing logic
 - `PeerManager`: Connection management
-- `StorageManager`: Persistent message storage
+- `MessageCache`: Deduplication cache
+- `BlePeripheralServer`: GATT server implementation
 
 **iOS-Specific Features:**
 - Background Bluetooth modes
 - State restoration for background operation
 - Privacy-preserving Bluetooth permissions
-- Integration with iOS Keychain for secure storage
+- Apple CryptoKit integration via `cryptography_flutter`
+- iOS Keychain integration for secure key storage
 
 ## Binary Protocol Specification
 
@@ -344,66 +412,70 @@ The binary protocol ensures 100% compatibility between:
 
 ```dart
 class BleMesh {
-  // Initialize the mesh network
+  // ✅ IMPLEMENTED - Initialize the mesh network
   Future<void> initialize({
     String? nickname,
     bool enableEncryption = true,
     PowerMode powerMode = PowerMode.balanced,
   });
 
-  // Start mesh networking
+  // ✅ IMPLEMENTED - Start mesh networking
   Future<void> startMesh();
 
-  // Stop mesh networking
+  // ✅ IMPLEMENTED - Stop mesh networking
   Future<void> stopMesh();
 
-  // Send public message
+  // ✅ IMPLEMENTED - Send public message
   Future<void> sendPublicMessage(String message);
 
-  // Send private message
-  Future<void> sendPrivateMessage(String peerId, String message);
-
-  // Join/create channel
-  Future<void> joinChannel(String channel, {String? password});
-
-  // Send channel message
-  Future<void> sendChannelMessage(String channel, String message);
-
-  // Leave channel
-  Future<void> leaveChannel(String channel);
-
-  // Get connected peers
+  // ✅ IMPLEMENTED - Get connected peers
   Future<List<Peer>> getConnectedPeers();
 
-  // Get discovered channels
-  Future<List<String>> getDiscoveredChannels();
-
-  // Block/unblock peer
-  Future<void> blockPeer(String peerId);
-  Future<void> unblockPeer(String peerId);
-
-  // Event streams
+  // ✅ IMPLEMENTED - Event streams
   Stream<Message> get messageStream;
   Stream<Peer> get peerConnectedStream;
   Stream<Peer> get peerDisconnectedStream;
-  Stream<String> get channelDiscoveredStream;
   Stream<MeshEvent> get meshEventStream;
+
+  // ⏳ PLANNED (Phase 3+) - Send private message
+  Future<void> sendPrivateMessage(String peerId, String message);
+
+  // ⏳ PLANNED (Phase 3+) - Join/create channel
+  Future<void> joinChannel(String channel, {String? password});
+
+  // ⏳ PLANNED (Phase 3+) - Send channel message
+  Future<void> sendChannelMessage(String channel, String message);
+
+  // ⏳ PLANNED (Phase 3+) - Leave channel
+  Future<void> leaveChannel(String channel);
+
+  // ⏳ PLANNED (Phase 3+) - Get discovered channels
+  Future<List<String>> getDiscoveredChannels();
+
+  // ⏳ PLANNED (Phase 5) - Block/unblock peer
+  Future<void> blockPeer(String peerId);
+  Future<void> unblockPeer(String peerId);
+
+  // ⏳ PLANNED (Phase 3+) - Channel discovery stream
+  Stream<String> get channelDiscoveredStream;
 }
 ```
 
 ### Data Models
 
 ```dart
+// ✅ FULLY IMPLEMENTED
 class Peer {
   final String id;
   final String nickname;
   final int rssi;
   final DateTime lastSeen;
   final bool isConnected;
-  final int hopCount;
-  final DateTime? lastForwardTime; // Phase 2: Last message forward time
+  final int hopCount;              // ✅ Phase 2: Implemented
+  final DateTime? lastForwardTime; // ✅ Phase 2: Implemented (Task 1.4)
 }
 
+// ✅ FULLY IMPLEMENTED
 class Message {
   final String id;
   final String senderId;
@@ -411,23 +483,25 @@ class Message {
   final String content;
   final MessageType type;
   final DateTime timestamp;
-  final String? channel;
-  final bool isEncrypted;
-  final DeliveryStatus status;
-  // Phase 2: Routing fields
+  final String? channel;           // ⏳ Phase 3+: Not used yet
+  final bool isEncrypted;          // ⏳ Phase 3+: Not used yet
+  final DeliveryStatus status;     // ⏳ Phase 3+: Not used yet
+  // ✅ Phase 2: Routing fields (Task 1.4)
   final int ttl;              // Time-to-live (hops remaining)
   final int hopCount;         // Number of hops taken
   final String messageId;     // Unique routing identifier
   final bool isForwarded;     // Whether message was forwarded
 }
 
+// ✅ FULLY IMPLEMENTED
 enum MessageType {
-  public,
-  private,
-  channel,
-  system,
+  public,    // ✅ Used in Phase 1
+  private,   // ⏳ Phase 3+
+  channel,   // ⏳ Phase 3+
+  system,    // ⏳ Phase 3+
 }
 
+// ✅ IMPLEMENTED (not actively used yet)
 enum DeliveryStatus {
   pending,
   sent,
@@ -435,6 +509,7 @@ enum DeliveryStatus {
   failed,
 }
 
+// ✅ FULLY IMPLEMENTED
 enum PowerMode {
   performance,
   balanced,
@@ -442,12 +517,20 @@ enum PowerMode {
   ultraLowPower,
 }
 
+// ✅ FULLY IMPLEMENTED
 class MeshEvent {
   final MeshEventType type;
   final String? message;
   final Map<String, dynamic>? data;
+
+  // ✅ Phase 2: Forwarding metrics getters (Task 1.4)
+  int? get messagesForwarded;
+  int? get messagesCached;
+  int? get cacheHits;
+  int? get cacheMisses;
 }
 
+// ✅ FULLY IMPLEMENTED
 enum MeshEventType {
   meshStarted,
   meshStopped,
@@ -455,7 +538,7 @@ enum MeshEventType {
   peerConnected,
   peerDisconnected,
   messageReceived,
-  forwardingMetrics, // Phase 2: Forwarding metrics event
+  forwardingMetrics,  // ✅ Phase 2: Implemented (Task 1.4)
   error,
 }
 ```
@@ -673,12 +756,80 @@ enum MeshEventType {
 - ✅ Message: 77 tests (Android: 13, iOS: 15, Dart: 49)
 - ✅ Total: 119 tests, 100% passing, ~95% code coverage
 
-### Phase 3: Encryption & Security
-- [ ] Key exchange implementation
-- [ ] End-to-end encryption
-- [ ] Channel password protection
-- [ ] Digital signatures
-- [ ] Secure storage
+### Phase 3: Encryption & Security (⏳ PLANNED - 3-4 weeks)
+
+**Technology**: Pure Dart `cryptography` package + `cryptography_flutter` for hardware acceleration
+
+- [ ] **Task 3.1: Setup Cryptography Infrastructure** (4-6 hours)
+  - [ ] Add `cryptography` and `cryptography_flutter` dependencies
+  - [ ] Create KeyManager service
+  - [ ] Create EncryptionService
+  - [ ] Define encrypted message data models
+
+- [ ] **Task 3.2: Implement Private Message Encryption** (8-10 hours)
+  - [ ] Update Message model with encryption fields
+  - [ ] Implement X25519 key exchange
+  - [ ] Implement Chacha20-Poly1305 encryption
+  - [ ] Implement decryption with signature verification
+  - [ ] Update sendPrivateMessage API
+
+- [ ] **Task 3.3: Implement Channel Encryption** (6-8 hours)
+  - [ ] Create ChannelManager service
+  - [ ] Implement Argon2id password-based key derivation
+  - [ ] Implement channel message encryption
+  - [ ] Update joinChannel and sendChannelMessage APIs
+
+- [ ] **Task 3.4: Implement Digital Signatures** (4-6 hours)
+  - [ ] Generate Ed25519 identity keys on initialization
+  - [ ] Implement message signing
+  - [ ] Implement signature verification
+  - [ ] Add signature to all encrypted messages
+
+- [ ] **Task 3.5: Implement Key Rotation** (4-5 hours)
+  - [ ] Add session key rotation logic
+  - [ ] Schedule periodic rotation (every 24 hours)
+  - [ ] Implement key cleanup
+
+- [ ] **Task 3.6: Update Platform Code** (6-8 hours)
+  - [ ] Android: Handle encrypted message types
+  - [ ] iOS: Handle encrypted message types
+  - [ ] Update method channel handlers
+  - [ ] Forward encrypted messages to Dart for decryption
+
+- [ ] **Task 3.7: Add Secure Key Storage** (5-6 hours)
+  - [ ] Integrate flutter_secure_storage
+  - [ ] Implement key persistence
+  - [ ] Implement key loading on startup
+  - [ ] Add key deletion methods
+
+- [ ] **Task 3.8: Update Example App** (6-8 hours)
+  - [ ] Add private chat screen with encryption indicator
+  - [ ] Add channel join screen with password input
+  - [ ] Update UI to show encryption status
+  - [ ] Add key management settings
+
+- [ ] **Task 3.9: Testing** (8-10 hours)
+  - [ ] Unit tests for encryption/decryption
+  - [ ] Unit tests for key derivation
+  - [ ] Unit tests for digital signatures
+  - [ ] Integration tests for private messages
+  - [ ] Integration tests for channel messages
+  - [ ] Cross-platform testing
+
+- [ ] **Task 3.10: Documentation** (4-5 hours)
+  - [ ] Update README with encryption examples
+  - [ ] Create SECURITY.md guide
+  - [ ] Document key management best practices
+  - [ ] Update API documentation
+
+**Algorithms Used:**
+- X25519: ECDH key exchange (32-byte keys)
+- Chacha20-Poly1305: AEAD encryption (32-byte keys)
+- Ed25519: Digital signatures (32-byte keys)
+- Argon2id: Password-based key derivation
+- HKDF-SHA256: Key derivation function
+
+**See `PHASE_3_IMPLEMENTATION_PLAN.md` for detailed breakdown**
 
 ### Phase 4: Optimization
 - [ ] Message compression
@@ -756,7 +907,7 @@ Choose the appropriate license for your use case.
 
 ## Project Status
 
-**Current Status**: Phase 2 In Progress (60% Complete) 🚧
+**Current Status**: Phase 2 In Progress (85% Complete) 🚧
 
 **Completed Phases:**
 - ✅ **Phase 1: Core Functionality** - BLE scanning, advertising, peer discovery, message transmission, Flutter API
@@ -783,22 +934,24 @@ Choose the appropriate license for your use case.
   - ✅ forwardMessage() methods on both platforms
   - ✅ Comprehensive logging for debugging
   - ✅ iOS bidirectional reception (central + peripheral paths)
-- ⏳ **Task 1.4**: Data Model Updates (NEXT)
-- ⏳ **Task 1.5**: Multi-hop Testing
+- ✅ **Task 1.4**: Data Model Updates (COMPLETE)
+  - ✅ Peer model with routing fields (hopCount, lastForwardTime)
+  - ✅ MeshEvent with forwarding metrics
+  - ✅ Message model with routing info exposed
+- ⏳ **Task 1.5**: Multi-hop Testing (NEXT)
 
 **Next Immediate Steps:**
-1. Update Dart Message model to expose routing info (ttl, hopCount, senderId)
-2. Add routing fields to Peer model (hopCount, lastForwardTime)
-3. Add forwarding metrics to MeshEvent (messagesForwarded, messagesCached)
-4. Update API documentation with new fields
-5. Physical device testing (3+ devices) to verify multi-hop routing
+1. Physical device testing (3+ devices) to verify multi-hop routing
+2. Test 2-hop and 3-hop scenarios
+3. Verify loop prevention and TTL expiration
+4. Measure network performance (latency, bandwidth, battery)
 
 **Key Achievements:**
-- ✅ 16 comprehensive technical documentation files
-- ✅ 119 tests passing (100% success rate)
-  - Android: 27 tests
-  - iOS: 30 tests
-  - Dart: 62 tests
+- ✅ 28 comprehensive technical documentation files
+- ✅ 177 tests passing (100% success rate)
+  - Dart: 126 tests across 7 test files
+  - Android: 51 tests in 3 test files
+  - iOS: 0 tests (planned)
 - ✅ ~95% code coverage for MessageHeader and Message classes
 - ✅ Cross-platform binary protocol (20-byte header)
 - ✅ Thread-safe event delivery (fixed UI thread violations)
@@ -815,11 +968,16 @@ Choose the appropriate license for your use case.
 5. ✅ Package naming (PACKAGE_RENAME.md)
 6. ✅ Characteristic refactoring (MSG_CHARACTERISTIC_REFACTORING.md)
 7. ✅ Test suite fixes (BLE_MESH_TEST_FIX.md, DART_TEST_MIGRATION.md)
+8. ✅ Loop prevention (LOOP_PREVENTION_COMPLETE.md)
+9. ✅ iOS bidirectional reception (IOS_BIDIRECTIONAL_FIX.md)
+10. ✅ Device ID redesign (DEVICE_ID_REDESIGN.md)
 
 **Code Statistics:**
 - MessageHeader Implementation: 1,677 lines (across 3 platforms)
-- Test Code: 2,166 lines
-- Documentation: 16 files, ~6,000 lines
+- DeviceIdManager Implementation: 450 lines (across 3 platforms)
+- MessageCache Implementation: 399 lines (Android + iOS)
+- Test Code: 3,000+ lines
+- Documentation: 28 files, ~10,000 lines
 - Design Patterns Applied: 16 patterns documented
 
 **Architecture Highlights:**
@@ -830,12 +988,13 @@ Choose the appropriate license for your use case.
 - Binary protocol with version negotiation
 - Thread-safe UI marshaling
 - Encapsulation and factory patterns
+- UUID-based device identification
 
 This is a Flutter plugin project that aims to bring Bluetooth LE mesh networking capabilities to Flutter applications, providing the same powerful features as the native bitchat implementations for both Android and iOS platforms.
 
 ---
 
-**Last Updated**: 2025-12-17
+**Last Updated**: 2025-12-23
 **Plugin Version**: 0.1.0
 **Flutter SDK**: >=3.3.0
 **Dart SDK**: ^3.9.2
