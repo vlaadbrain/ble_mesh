@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:ble_mesh/ble_mesh.dart';
 import 'chat_screen.dart';
+import 'private_chat_screen.dart';
 import 'settings_screen.dart';
 import 'mesh_events_screen.dart';
 import '../services/permission_service.dart';
@@ -18,6 +19,7 @@ class _HomeScreenState extends State<HomeScreen> {
   String _nickname = 'Anonymous';
   bool _isMeshStarted = false;
   bool _isInitialized = false;
+  bool _encryptionEnabled = true; // Phase 3: Track encryption status
   String _statusMessage = 'Not initialized';
   final List<Peer> _connectedPeers = [];
 
@@ -38,14 +40,14 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       await _bleMesh.initialize(
         nickname: _nickname,
-        enableEncryption: false, // Phase 1: No encryption yet
+        enableEncryption: true, // Phase 3: Enable encryption
         powerMode: PowerMode.balanced,
       );
       setState(() {
         _isInitialized = true;
-        _statusMessage = 'Initialized';
+        _statusMessage = 'Initialized (Encryption enabled)';
       });
-      _showSnackBar('Mesh initialized successfully');
+      _showSnackBar('Mesh initialized with encryption');
     } catch (e) {
       _showSnackBar('Failed to initialize: $e');
     }
@@ -125,7 +127,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _startListeningToPeers() {
     // Listen to peer connections
-    _bleMesh.peerConnectedStream.listen((peer) {
+    _bleMesh.peerConnectedStream.listen((peer) async {
       setState(() {
         if (!_connectedPeers.any((p) => p.id == peer.id)) {
           _connectedPeers.add(peer);
@@ -133,6 +135,17 @@ class _HomeScreenState extends State<HomeScreen> {
         _statusMessage = 'Connected to ${_connectedPeers.length} peer(s)';
       });
       _showSnackBar('Peer connected: ${peer.nickname}');
+
+      // Phase 3: Automatically exchange public keys when a peer connects
+      if (_encryptionEnabled) {
+        try {
+          final publicKey = await _bleMesh.getPublicKey();
+          await _bleMesh.sharePublicKey(peerId: peer.id, publicKey: publicKey);
+          print('Shared public key with ${peer.nickname}');
+        } catch (e) {
+          print('Error sharing public key: $e');
+        }
+      }
     });
 
     // Listen to peer disconnections
@@ -166,6 +179,79 @@ class _HomeScreenState extends State<HomeScreen> {
       MaterialPageRoute(
         builder: (context) => ChatScreen(
           bleMesh: _bleMesh,
+          nickname: _nickname,
+        ),
+      ),
+    );
+  }
+
+  /// Phase 3: Navigate to private chat with a selected peer
+  void _navigateToPrivateChat() {
+    if (!_isMeshStarted) {
+      _showSnackBar('Please start the mesh network first');
+      return;
+    }
+
+    if (_connectedPeers.isEmpty) {
+      _showSnackBar('No peers connected. Cannot start private chat.');
+      return;
+    }
+
+    // Show peer selection dialog
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.lock, color: Colors.green),
+            SizedBox(width: 8),
+            Text('Select Peer for Private Chat'),
+          ],
+        ),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: ListView.builder(
+            shrinkWrap: true,
+            itemCount: _connectedPeers.length,
+            itemBuilder: (context, index) {
+              final peer = _connectedPeers[index];
+              return ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: Colors.green.shade200,
+                  child: Text(
+                    peer.nickname.isNotEmpty
+                        ? peer.nickname[0].toUpperCase()
+                        : '?',
+                  ),
+                ),
+                title: Text(peer.nickname),
+                subtitle: Text('RSSI: ${peer.rssi} dBm'),
+                trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                onTap: () {
+                  Navigator.pop(context);
+                  _openPrivateChat(peer);
+                },
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _openPrivateChat(Peer peer) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => PrivateChatScreen(
+          bleMesh: _bleMesh,
+          peer: peer,
           nickname: _nickname,
         ),
       ),
@@ -381,9 +467,22 @@ class _HomeScreenState extends State<HomeScreen> {
             ElevatedButton.icon(
               onPressed: _isMeshStarted ? _navigateToChat : null,
               icon: const Icon(Icons.chat),
-              label: const Text('Open Chat'),
+              label: const Text('Open Public Chat'),
               style: ElevatedButton.styleFrom(
                 padding: const EdgeInsets.all(16),
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // Phase 3: Private Chat Button
+            ElevatedButton.icon(
+              onPressed: _isMeshStarted ? _navigateToPrivateChat : null,
+              icon: const Icon(Icons.lock),
+              label: const Text('Open Private Chat'),
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.all(16),
+                backgroundColor: Colors.green,
+                foregroundColor: Colors.white,
               ),
             ),
             const SizedBox(height: 16),

@@ -1,8 +1,12 @@
+import 'package:cryptography/cryptography.dart';
 import 'ble_mesh_platform_interface.dart';
 import 'models/peer.dart';
 import 'models/message.dart';
 import 'models/mesh_event.dart';
 import 'models/power_mode.dart';
+import 'services/key_manager.dart';
+import 'services/encryption_service.dart';
+import 'models/encrypted_message.dart';
 
 // Export models for easy access
 export 'models/peer.dart';
@@ -12,6 +16,10 @@ export 'models/power_mode.dart';
 
 /// Main class for interacting with the BLE mesh network
 class BleMesh {
+  // Phase 3: Encryption services
+  KeyManager? _keyManager;
+  EncryptionService? _encryptionService;
+  bool _encryptionEnabled = false;
   /// Get the platform version (for testing)
   Future<String?> getPlatformVersion() {
     return BleMeshPlatform.instance.getPlatformVersion();
@@ -26,7 +34,15 @@ class BleMesh {
     String? nickname,
     bool enableEncryption = true,
     PowerMode powerMode = PowerMode.balanced,
-  }) {
+  }) async {
+    // Phase 3: Initialize encryption services if enabled
+    _encryptionEnabled = enableEncryption;
+    if (enableEncryption) {
+      _keyManager = KeyManager();
+      await _keyManager!.initialize();
+      _encryptionService = EncryptionService(_keyManager!);
+    }
+
     return BleMeshPlatform.instance.initialize(
       nickname: nickname,
       enableEncryption: enableEncryption,
@@ -56,6 +72,86 @@ class BleMesh {
     return BleMeshPlatform.instance.sendPublicMessage(message);
   }
 
+  /// Phase 3: Send an encrypted private message to a specific peer
+  ///
+  /// [peerId] - The ID of the recipient peer
+  /// [message] - The message content to send (will be encrypted)
+  ///
+  /// Throws [StateError] if encryption is not enabled
+  /// Throws [Exception] if peer is not found or doesn't have a public key
+  Future<void> sendPrivateMessage(String peerId, String message) async {
+    if (!_encryptionEnabled || _encryptionService == null) {
+      throw StateError('Encryption must be enabled to send private messages');
+    }
+
+    // Get peer's public key
+    final peers = await getConnectedPeers();
+    final peer = peers.firstWhere(
+      (p) => p.id == peerId,
+      orElse: () => throw Exception('Peer not found: $peerId'),
+    );
+
+    if (peer.publicKey == null) {
+      throw Exception('Peer does not have a public key for encryption');
+    }
+
+    // Convert public key bytes to SimplePublicKey
+    final recipientPublicKey = SimplePublicKey(
+      peer.publicKey!,
+      type: KeyPairType.x25519,
+    );
+
+    // Encrypt message
+    final encryptedMessage = await _encryptionService!.encryptPrivateMessage(
+      recipientId: peerId,
+      recipientPublicKey: recipientPublicKey,
+      content: message,
+    );
+
+    // Get our public key
+    final ourPublicKey = await _keyManager!.getIdentityDhPublicKey();
+
+    // Send via platform interface
+    await BleMeshPlatform.instance.sendPrivateMessage(
+      peerId: peerId,
+      encryptedData: encryptedMessage.toBytes(),
+      senderPublicKey: ourPublicKey.bytes,
+    );
+  }
+
+  /// Phase 3: Get our public key for sharing with peers
+  ///
+  /// Returns the device's public key bytes for encryption
+  /// Throws [StateError] if encryption is not enabled
+  Future<List<int>> getPublicKey() async {
+    if (!_encryptionEnabled || _keyManager == null) {
+      throw StateError('Encryption must be enabled to get public key');
+    }
+
+    final publicKey = await _keyManager!.getIdentityDhPublicKey();
+    return publicKey.bytes;
+  }
+
+  /// Phase 3: Share our public key with a specific peer
+  ///
+  /// [peerId] - The ID of the peer to share the key with
+  /// [publicKey] - The public key bytes to share
+  ///
+  /// Throws [StateError] if encryption is not enabled
+  Future<void> sharePublicKey({
+    required String peerId,
+    required List<int> publicKey,
+  }) async {
+    if (!_encryptionEnabled) {
+      throw StateError('Encryption must be enabled to share public keys');
+    }
+
+    await BleMeshPlatform.instance.sharePublicKey(
+      peerId: peerId,
+      publicKey: publicKey,
+    );
+  }
+
   /// Get list of currently connected peers
   Future<List<Peer>> getConnectedPeers() {
     return BleMeshPlatform.instance.getConnectedPeers();
@@ -64,8 +160,72 @@ class BleMesh {
   /// Stream of received messages
   ///
   /// Listen to this stream to receive all incoming messages.
+  /// Encrypted messages will be automatically decrypted if encryption is enabled.
   Stream<Message> get messageStream {
-    return BleMeshPlatform.instance.messageStream;
+    final platformStream = BleMeshPlatform.instance.messageStream;
+
+    // If encryption is not enabled, return the stream as-is
+    if (!_encryptionEnabled || _encryptionService == null) {
+      return platformStream;
+    }
+
+    // Transform the stream to decrypt encrypted messages
+    return platformStream.asyncMap((message) async {
+      // If message is not encrypted, return as-is
+      if (!message.isEncrypted || message.encryptedData == null) {
+        return message;
+      }
+
+      try {
+        // Decrypt the message
+        final decryptedContent = await _decryptMessage(message);
+
+        // Return message with decrypted content
+        return message.copyWith(
+          content: decryptedContent,
+          isEncrypted: false, // Mark as decrypted for display
+        );
+      } catch (e) {
+        // If decryption fails, return the message with an error indicator
+        return message.copyWith(
+          content: '[Decryption failed: $e]',
+        );
+      }
+    });
+  }
+
+  /// Phase 3: Internal method to decrypt an encrypted message
+  Future<String> _decryptMessage(Message message) async {
+    if (_encryptionService == null || message.encryptedData == null) {
+      throw StateError('Encryption service not initialized or no encrypted data');
+    }
+
+    // Get sender's public key
+    if (message.senderPublicKey == null) {
+      throw Exception('Message does not contain sender public key');
+    }
+
+    final senderPublicKey = SimplePublicKey(
+      message.senderPublicKey!,
+      type: KeyPairType.x25519,
+    );
+
+    // Decrypt based on message type
+    if (message.type == MessageType.private) {
+      // Deserialize encrypted message from bytes
+      final encryptedMessage = EncryptedMessage.fromBytes(message.encryptedData!);
+
+      return await _encryptionService!.decryptPrivateMessage(
+        senderId: message.senderId,
+        senderPublicKey: senderPublicKey,
+        encryptedMessage: encryptedMessage,
+      );
+    } else if (message.type == MessageType.channel) {
+      // Channel decryption will be implemented in Task 3.3
+      throw UnimplementedError('Channel message decryption not yet implemented');
+    } else {
+      throw Exception('Cannot decrypt message of type: ${message.type}');
+    }
   }
 
   /// Stream of peer connection events

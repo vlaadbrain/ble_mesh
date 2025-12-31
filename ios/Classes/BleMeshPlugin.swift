@@ -71,6 +71,12 @@ public class BleMeshPlugin: NSObject, FlutterPlugin {
         case "sendPublicMessage":
             handleSendPublicMessage(call, result: result)
 
+        case "sendPrivateMessage":
+            handleSendPrivateMessage(call, result: result)
+
+
+        case "sharePublicKey":
+            handleSharePublicKey(call, result: result)
         case "getConnectedPeers":
             handleGetConnectedPeers(result: result)
 
@@ -129,6 +135,33 @@ public class BleMeshPlugin: NSObject, FlutterPlugin {
 
         meshService?.sendPublicMessage(content: message)
         print("[\(tag)] Sent public message: \(message)")
+        result(nil)
+    }
+
+    private func handleSendPrivateMessage(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+        guard let args = call.arguments as? [String: Any],
+              let peerId = args["peerId"] as? String,
+              let encryptedData = args["encryptedData"] as? FlutterStandardTypedData,
+              let senderPublicKey = args["senderPublicKey"] as? FlutterStandardTypedData else {
+            result(FlutterError(code: "INVALID_ARGUMENT", message: "peerId, encryptedData, and senderPublicKey are required", details: nil))
+            return
+        }
+
+        meshService?.sendPrivateMessage(peerId: peerId, encryptedData: encryptedData.data, senderPublicKey: senderPublicKey.data)
+        print("[\(tag)] Sent private message to: \(peerId)")
+        result(nil)
+    }
+
+    private func handleSharePublicKey(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+        guard let args = call.arguments as? [String: Any],
+              let peerId = args["peerId"] as? String,
+              let publicKey = args["publicKey"] as? FlutterStandardTypedData else {
+            result(FlutterError(code: "INVALID_ARGUMENT", message: "peerId and publicKey are required", details: nil))
+            return
+        }
+
+        meshService?.sharePublicKey(peerId: peerId, publicKey: publicKey.data)
+        print("[\(tag)] Shared public key with: \(peerId)")
         result(nil)
     }
 

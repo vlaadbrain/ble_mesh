@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -69,6 +70,30 @@ class MethodChannelBleMesh extends BleMeshPlatform {
   Future<void> sendPublicMessage(String message) async {
     await methodChannel.invokeMethod('sendPublicMessage', {
       'message': message,
+    });
+  }
+
+  @override
+  Future<void> sendPrivateMessage({
+    required String peerId,
+    required List<int> encryptedData,
+    required List<int> senderPublicKey,
+  }) async {
+    await methodChannel.invokeMethod('sendPrivateMessage', {
+      'peerId': peerId,
+      'encryptedData': Uint8List.fromList(encryptedData),
+      'senderPublicKey': Uint8List.fromList(senderPublicKey),
+    });
+  }
+
+  @override
+  Future<void> sharePublicKey({
+    required String peerId,
+    required List<int> publicKey,
+  }) async {
+    await methodChannel.invokeMethod('sharePublicKey', {
+      'peerId': peerId,
+      'publicKey': Uint8List.fromList(publicKey),
     });
   }
 

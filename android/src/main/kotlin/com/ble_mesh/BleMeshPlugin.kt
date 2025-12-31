@@ -79,6 +79,12 @@ class BleMeshPlugin : FlutterPlugin, MethodCallHandler {
             "sendPublicMessage" -> {
                 handleSendPublicMessage(call, result)
             }
+            "sendPrivateMessage" -> {
+                handleSendPrivateMessage(call, result)
+            }
+            "sharePublicKey" -> {
+                handleSharePublicKey(call, result)
+            }
             "getConnectedPeers" -> {
                 handleGetConnectedPeers(result)
             }
@@ -153,6 +159,45 @@ class BleMeshPlugin : FlutterPlugin, MethodCallHandler {
         } catch (e: Exception) {
             Log.e(tag, "Error sending message", e)
             result.error("SEND_ERROR", e.message, null)
+        }
+    }
+
+    private fun handleSendPrivateMessage(call: MethodCall, result: Result) {
+        try {
+            val peerId = call.argument<String>("peerId")
+            val encryptedData = call.argument<ByteArray>("encryptedData")
+            val senderPublicKey = call.argument<ByteArray>("senderPublicKey")
+
+            if (peerId == null || encryptedData == null || senderPublicKey == null) {
+                result.error("INVALID_ARGUMENT", "peerId, encryptedData, and senderPublicKey are required", null)
+                return
+            }
+
+            meshService?.sendPrivateMessage(peerId, encryptedData, senderPublicKey)
+            Log.d(tag, "Sent private message to: $peerId")
+            result.success(null)
+        } catch (e: Exception) {
+            Log.e(tag, "Error sending private message", e)
+            result.error("SEND_PRIVATE_ERROR", e.message, null)
+        }
+    }
+
+    private fun handleSharePublicKey(call: MethodCall, result: Result) {
+        try {
+            val peerId = call.argument<String>("peerId")
+            val publicKey = call.argument<ByteArray>("publicKey")
+
+            if (peerId == null || publicKey == null) {
+                result.error("INVALID_ARGUMENT", "peerId and publicKey are required", null)
+                return
+            }
+
+            meshService?.sharePublicKey(peerId, publicKey)
+            Log.d(tag, "Shared public key with: $peerId")
+            result.success(null)
+        } catch (e: Exception) {
+            Log.e(tag, "Error sharing public key", e)
+            result.error("SHARE_KEY_ERROR", e.message, null)
         }
     }
 

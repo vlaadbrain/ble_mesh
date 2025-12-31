@@ -185,6 +185,95 @@ class BluetoothMeshService {
         }
     }
 
+    /// Phase 3: Send an encrypted private message to a specific peer
+    func sendPrivateMessage(peerId: String, encryptedData: Data, senderPublicKey: Data) {
+        guard isRunning else {
+            print("[\(tag)] Cannot send private message: mesh service not running")
+            return
+        }
+
+        guard let peripheral = connectionManager.getConnectedPeripheral(peerId) else {
+            print("[\(tag)] Cannot send private message: peer \(peerId) not connected")
+            return
+        }
+
+        print("[\(tag)] Sending private message to peer: \(peerId), size=\(encryptedData.count) bytes")
+
+        // Phase 2: Create message object with encrypted data
+        let senderId = UIDevice.current.identifierForVendor?.uuidString ?? "00:00:00:00:00:00"
+        let senderIdFormatted = String(senderId.prefix(17).replacingOccurrences(of: "-", with: ":"))
+
+        let message = Message(
+            senderId: senderIdFormatted,
+            senderNickname: deviceNickname,
+            content: "", // Content is encrypted
+            type: .privateMessage,
+            status: .sent,
+            ttl: 7,
+            hopCount: 0,
+            messageId: MessageHeader.generateMessageId(),
+            isForwarded: false,
+            isEncrypted: true,
+            encryptedData: [UInt8](encryptedData),
+            senderPublicKey: [UInt8](senderPublicKey)
+        )
+
+        // Serialize message
+        let messageData = message.toData()
+
+        // Send to specific peer
+        if let msgCharacteristic = serviceManager.findMsgCharacteristic(peripheral) {
+            _ = serviceManager.writeCharacteristic(peripheral, characteristic: msgCharacteristic, data: messageData)
+            print("[\(tag)] Sent encrypted message to peer: \(peerId)")
+        } else {
+            print("[\(tag)] MSG characteristic not found for peer: \(peerId)")
+        }
+    }
+
+    /// Phase 3: Share our public key with a specific peer
+    func sharePublicKey(peerId: String, publicKey: Data) {
+        guard isRunning else {
+            print("[\(tag)] Cannot share public key: mesh service not running")
+            return
+        }
+
+        guard let peripheral = connectionManager.getConnectedPeripheral(peerId) else {
+            print("[\(tag)] Cannot share public key: peer \(peerId) not connected")
+            return
+        }
+
+        print("[\(tag)] Sharing public key with peer: \(peerId), size=\(publicKey.count) bytes")
+
+        // Create a special message type for key exchange
+        let senderId = UIDevice.current.identifierForVendor?.uuidString ?? "00:00:00:00:00:00"
+        let senderIdFormatted = String(senderId.prefix(17).replacingOccurrences(of: "-", with: ":"))
+
+        let message = Message(
+            senderId: senderIdFormatted,
+            senderNickname: deviceNickname,
+            content: "", // No content, just key exchange
+            type: .system,
+            status: .sent,
+            ttl: 1, // No forwarding for key exchange
+            hopCount: 0,
+            messageId: MessageHeader.generateMessageId(),
+            isForwarded: false,
+            isEncrypted: false,
+            senderPublicKey: [UInt8](publicKey)
+        )
+
+        // Serialize message
+        let messageData = message.toData()
+
+        // Send to specific peer
+        if let msgCharacteristic = serviceManager.findMsgCharacteristic(peripheral) {
+            _ = serviceManager.writeCharacteristic(peripheral, characteristic: msgCharacteristic, data: messageData)
+            print("[\(tag)] Shared public key with peer: \(peerId)")
+        } else {
+            print("[\(tag)] MSG characteristic not found for peer: \(peerId)")
+        }
+    }
+
     /// Setup callbacks for scanner, advertiser, peer manager, and connection manager
     private func setupCallbacks() {
         // Scanner callbacks

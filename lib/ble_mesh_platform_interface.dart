@@ -55,6 +55,23 @@ abstract class BleMeshPlatform extends PlatformInterface {
     throw UnimplementedError('sendPublicMessage() has not been implemented.');
   }
 
+  /// Phase 3: Send an encrypted private message to a specific peer
+  Future<void> sendPrivateMessage({
+    required String peerId,
+    required List<int> encryptedData,
+    required List<int> senderPublicKey,
+  }) {
+    throw UnimplementedError('sendPrivateMessage() has not been implemented.');
+  }
+
+  /// Phase 3: Share our public key with a peer
+  Future<void> sharePublicKey({
+    required String peerId,
+    required List<int> publicKey,
+  }) {
+    throw UnimplementedError('sharePublicKey() has not been implemented.');
+  }
+
   /// Get list of connected peers
   Future<List<Peer>> getConnectedPeers() {
     throw UnimplementedError('getConnectedPeers() has not been implemented.');

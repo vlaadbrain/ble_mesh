@@ -217,6 +217,105 @@ class BluetoothMeshService(private val context: Context) {
     }
 
     /**
+     * Phase 3: Send an encrypted private message to a specific peer
+     */
+    fun sendPrivateMessage(peerId: String, encryptedData: ByteArray, senderPublicKey: ByteArray) {
+        if (!isRunning) {
+            Log.w(tag, "Cannot send private message: mesh service not running")
+            return
+        }
+
+        val device = connectionManager.getConnectedDevice(peerId)
+        if (device == null) {
+            Log.w(tag, "Cannot send private message: peer $peerId not connected")
+            return
+        }
+
+        Log.d(tag, "Sending private message to peer: $peerId, size=${encryptedData.size} bytes")
+
+        // Phase 2: Create message object with encrypted data
+        val senderId = bluetoothAdapter.address ?: "00:00:00:00:00:00"
+        val message = com.ble_mesh.models.Message(
+            senderId = senderId,
+            senderNickname = deviceNickname,
+            content = "", // Content is encrypted
+            type = com.ble_mesh.models.MessageType.PRIVATE,
+            status = com.ble_mesh.models.DeliveryStatus.SENT,
+            ttl = 7,
+            hopCount = 0,
+            messageId = MessageHeader.generateMessageId(),
+            isForwarded = false,
+            isEncrypted = true,
+            encryptedData = encryptedData.toList(),
+            senderPublicKey = senderPublicKey.toList()
+        )
+
+        // Serialize message
+        val messageData = message.toByteArray()
+
+        // Send to specific peer
+        val gatt = connectionManager.getGatt(peerId)
+        gatt?.let {
+            val msgCharacteristic = connectionManager.getCharacteristic(peerId, BleConstants.MSG_CHARACTERISTIC_UUID)
+            if (msgCharacteristic != null) {
+                connectionManager.writeCharacteristic(it, msgCharacteristic, messageData)
+                Log.d(tag, "Sent encrypted message to peer: $peerId")
+            } else {
+                Log.w(tag, "MSG characteristic not found for peer: $peerId")
+            }
+        }
+    }
+
+    /**
+     * Phase 3: Share our public key with a specific peer
+     */
+    fun sharePublicKey(peerId: String, publicKey: ByteArray) {
+        if (!isRunning) {
+            Log.w(tag, "Cannot share public key: mesh service not running")
+            return
+        }
+
+        val device = connectionManager.getConnectedDevice(peerId)
+        if (device == null) {
+            Log.w(tag, "Cannot share public key: peer $peerId not connected")
+            return
+        }
+
+        Log.d(tag, "Sharing public key with peer: $peerId, size=${publicKey.size} bytes")
+
+        // Create a special message type for key exchange
+        val senderId = bluetoothAdapter.address ?: "00:00:00:00:00:00"
+        val message = com.ble_mesh.models.Message(
+            senderId = senderId,
+            senderNickname = deviceNickname,
+            content = "", // No content, just key exchange
+            type = com.ble_mesh.models.MessageType.SYSTEM,
+            status = com.ble_mesh.models.DeliveryStatus.SENT,
+            ttl = 1, // No forwarding for key exchange
+            hopCount = 0,
+            messageId = MessageHeader.generateMessageId(),
+            isForwarded = false,
+            isEncrypted = false,
+            senderPublicKey = publicKey.toList()
+        )
+
+        // Serialize message
+        val messageData = message.toByteArray()
+
+        // Send to specific peer
+        val gatt = connectionManager.getGatt(peerId)
+        gatt?.let {
+            val msgCharacteristic = connectionManager.getCharacteristic(peerId, BleConstants.MSG_CHARACTERISTIC_UUID)
+            if (msgCharacteristic != null) {
+                connectionManager.writeCharacteristic(it, msgCharacteristic, messageData)
+                Log.d(tag, "Shared public key with peer: $peerId")
+            } else {
+                Log.w(tag, "MSG characteristic not found for peer: $peerId")
+            }
+        }
+    }
+
+    /**
      * Setup callbacks for scanner, advertiser, peer manager, and connection manager
      */
     private fun setupCallbacks() {

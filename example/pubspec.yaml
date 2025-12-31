@@ -35,6 +35,9 @@ dependencies:
   # For handling runtime permissions
   permission_handler: ^11.3.0
 
+  # Phase 3: For hardware-accelerated cryptography
+  cryptography_flutter: ^2.3.4
+
 dev_dependencies:
   integration_test:
     sdk: flutter

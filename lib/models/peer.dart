@@ -21,6 +21,9 @@ class Peer {
   /// Last time a message was forwarded to/from this peer (for routing metrics)
   final DateTime? lastForwardTime;
 
+  /// Phase 3: Public key for encrypted communication
+  final List<int>? publicKey;
+
   const Peer({
     required this.id,
     required this.nickname,
@@ -29,6 +32,7 @@ class Peer {
     required this.isConnected,
     this.hopCount = 0,
     this.lastForwardTime,
+    this.publicKey,
   });
 
   /// Create a Peer from a map (for method channel deserialization)
@@ -43,6 +47,7 @@ class Peer {
       lastForwardTime: map['lastForwardTime'] != null
           ? DateTime.fromMillisecondsSinceEpoch(map['lastForwardTime'] as int)
           : null,
+      publicKey: map['publicKey'] as List<int>?,
     );
   }
 
@@ -56,6 +61,7 @@ class Peer {
       'isConnected': isConnected,
       'hopCount': hopCount,
       'lastForwardTime': lastForwardTime?.millisecondsSinceEpoch,
+      'publicKey': publicKey,
     };
   }
 

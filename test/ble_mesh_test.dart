@@ -36,6 +36,23 @@ class MockBleMeshPlatform
   }
 
   @override
+  Future<void> sendPrivateMessage({
+    required String peerId,
+    required List<int> encryptedData,
+    required List<int> senderPublicKey,
+  }) async {
+    // Mock implementation
+  }
+
+  @override
+  Future<void> sharePublicKey({
+    required String peerId,
+    required List<int> publicKey,
+  }) async {
+    // Mock implementation
+  }
+
+  @override
   Future<List<Peer>> getConnectedPeers() async {
     return [];
   }

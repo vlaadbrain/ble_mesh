@@ -69,6 +69,12 @@ class Message {
   /// Phase 2: Whether this message was forwarded
   final bool isForwarded;
 
+  /// Phase 3: Encrypted message data (for private/channel messages)
+  final List<int>? encryptedData;
+
+  /// Phase 3: Sender's public key (for key exchange)
+  final List<int>? senderPublicKey;
+
   const Message({
     required this.id,
     required this.senderId,
@@ -84,6 +90,9 @@ class Message {
     this.hopCount = 0,
     required this.messageId,
     this.isForwarded = false,
+    // Phase 3: Encryption fields
+    this.encryptedData,
+    this.senderPublicKey,
   });
 
   /// Create a Message from a map (for method channel deserialization)
@@ -103,6 +112,9 @@ class Message {
       hopCount: map['hopCount'] as int? ?? 0,
       messageId: map['messageId'] as String? ?? map['id'] as String,
       isForwarded: map['isForwarded'] as bool? ?? false,
+      // Phase 3: Encryption fields
+      encryptedData: map['encryptedData'] as List<int>?,
+      senderPublicKey: map['senderPublicKey'] as List<int>?,
     );
   }
 
@@ -123,6 +135,9 @@ class Message {
       'hopCount': hopCount,
       'messageId': messageId,
       'isForwarded': isForwarded,
+      // Phase 3: Encryption fields
+      'encryptedData': encryptedData,
+      'senderPublicKey': senderPublicKey,
     };
   }
 
@@ -141,6 +156,8 @@ class Message {
     int? hopCount,
     String? messageId,
     bool? isForwarded,
+    List<int>? encryptedData,
+    List<int>? senderPublicKey,
   }) {
     return Message(
       id: id ?? this.id,
@@ -156,6 +173,8 @@ class Message {
       hopCount: hopCount ?? this.hopCount,
       messageId: messageId ?? this.messageId,
       isForwarded: isForwarded ?? this.isForwarded,
+      encryptedData: encryptedData ?? this.encryptedData,
+      senderPublicKey: senderPublicKey ?? this.senderPublicKey,
     );
   }
 
