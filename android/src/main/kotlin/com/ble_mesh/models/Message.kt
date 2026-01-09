@@ -85,7 +85,6 @@ data class Message(
                     isForwarded = header.hopCount > 0
                 )
             } catch (e: Exception) {
-                android.util.Log.e("Message", "Failed to parse message from bytes", e)
                 null
             }
         }
