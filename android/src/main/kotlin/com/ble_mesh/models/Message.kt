@@ -98,6 +98,7 @@ data class Message(
                 MessageHeader.TYPE_PUBLIC -> MessageType.PUBLIC
                 MessageHeader.TYPE_PRIVATE -> MessageType.PRIVATE
                 MessageHeader.TYPE_CHANNEL -> MessageType.CHANNEL
+                MessageHeader.TYPE_KEY_EXCHANGE -> MessageType.SYSTEM
                 else -> MessageType.PUBLIC
             }
         }
@@ -110,7 +111,7 @@ data class Message(
                 MessageType.PUBLIC -> MessageHeader.TYPE_PUBLIC
                 MessageType.PRIVATE -> MessageHeader.TYPE_PRIVATE
                 MessageType.CHANNEL -> MessageHeader.TYPE_CHANNEL
-                MessageType.SYSTEM -> MessageHeader.TYPE_PUBLIC
+                MessageType.SYSTEM -> MessageHeader.TYPE_KEY_EXCHANGE
             }
         }
     }

@@ -280,5 +280,37 @@ class MessageHeaderTest {
         assertEquals("Map should contain senderId", "AA:BB:CC:DD:EE:FF", map["senderId"])
         assertEquals("Map should contain payloadLength", 100, map["payloadLength"])
     }
+
+    @Test
+    fun testKeyExchangeTypeRoundTrip() {
+        // Test that TYPE_KEY_EXCHANGE (used for SYSTEM messages) serializes correctly
+        val header = MessageHeader(
+            type = MessageHeader.TYPE_KEY_EXCHANGE,
+            ttl = 1,
+            hopCount = 0,
+            messageId = MessageHeader.generateMessageId(),
+            senderId = "AA:BB:CC:DD:EE:FF",
+            payloadLength = 32
+        )
+
+        val bytes = header.toByteArray()
+        val deserialized = MessageHeader.fromByteArray(bytes)
+
+        assertEquals("TYPE_KEY_EXCHANGE should be preserved", MessageHeader.TYPE_KEY_EXCHANGE, deserialized.type)
+        assertEquals("Type string should be KEY_EXCHANGE", "KEY_EXCHANGE", deserialized.getTypeString())
+    }
+
+    @Test
+    fun testAllMessageTypeConstants() {
+        // Verify all message type constants have expected values
+        assertEquals("TYPE_PUBLIC should be 0x01", 0x01.toByte(), MessageHeader.TYPE_PUBLIC)
+        assertEquals("TYPE_PRIVATE should be 0x02", 0x02.toByte(), MessageHeader.TYPE_PRIVATE)
+        assertEquals("TYPE_CHANNEL should be 0x03", 0x03.toByte(), MessageHeader.TYPE_CHANNEL)
+        assertEquals("TYPE_PEER_ANNOUNCEMENT should be 0x04", 0x04.toByte(), MessageHeader.TYPE_PEER_ANNOUNCEMENT)
+        assertEquals("TYPE_ACKNOWLEDGMENT should be 0x05", 0x05.toByte(), MessageHeader.TYPE_ACKNOWLEDGMENT)
+        assertEquals("TYPE_KEY_EXCHANGE should be 0x06", 0x06.toByte(), MessageHeader.TYPE_KEY_EXCHANGE)
+        assertEquals("TYPE_STORE_FORWARD should be 0x07", 0x07.toByte(), MessageHeader.TYPE_STORE_FORWARD)
+        assertEquals("TYPE_ROUTING_UPDATE should be 0x08", 0x08.toByte(), MessageHeader.TYPE_ROUTING_UPDATE)
+    }
 }
 

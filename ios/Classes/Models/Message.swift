@@ -126,6 +126,8 @@ struct Message {
             return .privateMessage
         case MessageHeader.typeChannel:
             return .channel
+        case MessageHeader.typeKeyExchange:
+            return .system
         default:
             return .publicMessage
         }
@@ -141,7 +143,7 @@ struct Message {
         case .channel:
             return MessageHeader.typeChannel
         case .system:
-            return MessageHeader.typePublic
+            return MessageHeader.typeKeyExchange
         }
     }
 
