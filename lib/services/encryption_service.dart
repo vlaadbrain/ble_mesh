@@ -50,12 +50,16 @@ class EncryptionService {
     final localPublicKey =
         await sessionKeys.localEphemeralKeyPair.extractPublicKey();
 
+    // Get signing public key for verification by recipient
+    final signingPublicKey = await _keyManager.getIdentitySigningPublicKey();
+
     return EncryptedMessage(
       ciphertext: secretBox.cipherText,
       nonce: secretBox.nonce,
       mac: secretBox.mac,
       ephemeralPublicKey: localPublicKey.bytes,
       signatureBytes: signature.bytes,
+      signingPublicKey: signingPublicKey.bytes,
     );
   }
 
@@ -65,23 +69,30 @@ class EncryptionService {
     required SimplePublicKey senderPublicKey,
     required EncryptedMessage encryptedMessage,
   }) async {
-    // Verify signature first
-    if (encryptedMessage.signatureBytes != null) {
+    // Verify signature first (using sender's signing public key from the message)
+    if (encryptedMessage.signatureBytes != null &&
+        encryptedMessage.signingPublicKey != null) {
       final dataToVerify = [
         ...encryptedMessage.ciphertext,
         ...encryptedMessage.nonce,
         ...encryptedMessage.mac.bytes,
       ];
 
+      // Use the signing public key from the message for verification
+      final signingPublicKey = SimplePublicKey(
+        encryptedMessage.signingPublicKey!,
+        type: KeyPairType.ed25519,
+      );
+
       final signature = Signature(
         encryptedMessage.signatureBytes!,
-        publicKey: senderPublicKey,
+        publicKey: signingPublicKey,
       );
 
       final isValid = await _keyManager.verify(
         dataToVerify,
         signature,
-        senderPublicKey,
+        signingPublicKey,
       );
 
       if (!isValid) {
@@ -99,9 +110,11 @@ class EncryptionService {
       type: KeyPairType.x25519,
     );
 
-    // Get session keys (will perform ECDH)
-    final sessionKeys =
-        await _keyManager.getSessionKeys(senderId, senderEphemeralPublicKey);
+    // Derive shared secret using our identity DH key and sender's ephemeral public key
+    // This matches the sender's encryption: sender_ephemeral + our_identity_DH
+    final sharedSecret = await _keyManager.deriveSharedSecretForDecryption(
+      senderEphemeralPublicKey,
+    );
 
     // Derive decryption key using HKDF
     final algorithm = Chacha20.poly1305Aead();
@@ -111,7 +124,7 @@ class EncryptionService {
     );
 
     final decryptionKey = await hkdf.deriveKey(
-      secretKey: sessionKeys.sharedSecret,
+      secretKey: sharedSecret,
       info: utf8.encode('ble_mesh_private_message'),
       nonce: [],
     );

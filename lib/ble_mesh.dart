@@ -80,24 +80,34 @@ class BleMesh {
   /// Throws [StateError] if encryption is not enabled
   /// Throws [Exception] if peer is not found or doesn't have a public key
   Future<void> sendPrivateMessage(String peerId, String message) async {
-    if (!_encryptionEnabled || _encryptionService == null) {
+    if (!_encryptionEnabled || _encryptionService == null || _keyManager == null) {
       throw StateError('Encryption must be enabled to send private messages');
     }
 
-    // Get peer's public key
-    final peers = await getConnectedPeers();
-    final peer = peers.firstWhere(
-      (p) => p.id == peerId,
-      orElse: () => throw Exception('Peer not found: $peerId'),
-    );
+    // First, try to get peer's public key from KeyManager (received via key exchange)
+    List<int>? peerPublicKeyBytes = _keyManager!.getPeerPublicKey(peerId);
 
-    if (peer.publicKey == null) {
-      throw Exception('Peer does not have a public key for encryption');
+    // If not found in KeyManager, try to get from connected peers list
+    if (peerPublicKeyBytes == null) {
+      final peers = await getConnectedPeers();
+      final peer = peers.firstWhere(
+        (p) => p.id == peerId,
+        orElse: () => throw Exception('Peer not found: $peerId'),
+      );
+
+      if (peer.publicKey != null && peer.publicKey!.isNotEmpty) {
+        peerPublicKeyBytes = peer.publicKey;
+      }
+    }
+
+    if (peerPublicKeyBytes == null || peerPublicKeyBytes.isEmpty) {
+      throw Exception('Peer does not have a public key for encryption. '
+          'Please exchange keys first using sharePublicKey().');
     }
 
     // Convert public key bytes to SimplePublicKey
     final recipientPublicKey = SimplePublicKey(
-      peer.publicKey!,
+      peerPublicKeyBytes,
       type: KeyPairType.x25519,
     );
 
@@ -157,10 +167,14 @@ class BleMesh {
     return BleMeshPlatform.instance.getConnectedPeers();
   }
 
+  // Callback for when a peer's public key is received
+  void Function(String peerId, List<int> publicKey)? onPeerPublicKeyReceived;
+
   /// Stream of received messages
   ///
   /// Listen to this stream to receive all incoming messages.
   /// Encrypted messages will be automatically decrypted if encryption is enabled.
+  /// System messages with public keys will be intercepted and stored.
   Stream<Message> get messageStream {
     final platformStream = BleMeshPlatform.instance.messageStream;
 
@@ -169,8 +183,19 @@ class BleMesh {
       return platformStream;
     }
 
-    // Transform the stream to decrypt encrypted messages
+    // Transform the stream to handle encryption-related messages
     return platformStream.asyncMap((message) async {
+      print('platformStream has a message ${message.toString()}');
+      // Handle system messages with public keys
+      if (message.type == MessageType.system && message.senderPublicKey != null) {
+      print('system message received: ${message.toString()}');
+        await _handlePublicKeyMessage(message);
+        // Return the message so UI can optionally display key exchange events
+        return message.copyWith(
+          content: '[Public key received from ${message.senderNickname}]',
+        );
+      }
+
       // If message is not encrypted, return as-is
       if (!message.isEncrypted || message.encryptedData == null) {
         return message;
@@ -178,6 +203,7 @@ class BleMesh {
 
       try {
         // Decrypt the message
+        print('encrypted message received: ${message.toString()}');
         final decryptedContent = await _decryptMessage(message);
 
         // Return message with decrypted content
@@ -192,6 +218,23 @@ class BleMesh {
         );
       }
     });
+  }
+
+  /// Handle incoming public key messages
+  Future<void> _handlePublicKeyMessage(Message message) async {
+    print('_handlePublicKeyMessage: ${message.toString()}');
+    if (_keyManager == null || message.senderPublicKey == null) {
+      return;
+    }
+
+    final senderId = message.senderId;
+    final publicKey = message.senderPublicKey!;
+
+    // Store the public key in KeyManager
+    _keyManager!.storePeerPublicKey(senderId, publicKey);
+
+    // Notify listeners (e.g., UI) that a public key was received
+    onPeerPublicKeyReceived?.call(senderId, publicKey);
   }
 
   /// Phase 3: Internal method to decrypt an encrypted message

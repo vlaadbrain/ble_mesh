@@ -8,6 +8,7 @@ class EncryptedMessage {
   final Mac mac;
   final List<int>? ephemeralPublicKey; // For X25519 key exchange
   final List<int>? signatureBytes; // For authenticity (stored as bytes)
+  final List<int>? signingPublicKey; // Sender's Ed25519 signing public key for verification
 
   EncryptedMessage({
     required this.ciphertext,
@@ -15,6 +16,7 @@ class EncryptedMessage {
     required this.mac,
     this.ephemeralPublicKey,
     this.signatureBytes,
+    this.signingPublicKey,
   });
 
   /// Get signature from bytes
@@ -30,6 +32,7 @@ class EncryptedMessage {
     // Write lengths and data
     // Format: [ciphertext_len(4)][ciphertext][nonce_len(4)][nonce][mac_len(4)][mac]
     //         [has_ephemeral(1)][ephemeral_len(4)][ephemeral][has_sig(1)][sig_len(4)][sig]
+    //         [has_signing_key(1)][signing_key_len(4)][signing_key]
 
     // Ciphertext
     _writeInt32(buffer, ciphertext.length);
@@ -60,6 +63,15 @@ class EncryptedMessage {
       buffer.add(signatureBytes!);
     } else {
       buffer.addByte(0); // no signature
+    }
+
+    // Signing public key (optional)
+    if (signingPublicKey != null) {
+      buffer.addByte(1); // has signing public key
+      _writeInt32(buffer, signingPublicKey!.length);
+      buffer.add(signingPublicKey!);
+    } else {
+      buffer.addByte(0); // no signing public key
     }
 
     return buffer.toBytes();
@@ -108,6 +120,20 @@ class EncryptedMessage {
       final sigLen = _readInt32(data, offset);
       offset += 4;
       signatureBytes = data.sublist(offset, offset + sigLen);
+      offset += sigLen;
+    }
+
+    // Read signing public key (optional)
+    List<int>? signingPublicKey;
+    if (offset < data.length) {
+      final hasSigningKey = data[offset] == 1;
+      offset += 1;
+      if (hasSigningKey) {
+        final signingKeyLen = _readInt32(data, offset);
+        offset += 4;
+        signingPublicKey = data.sublist(offset, offset + signingKeyLen);
+        offset += signingKeyLen;
+      }
     }
 
     return EncryptedMessage(
@@ -116,6 +142,7 @@ class EncryptedMessage {
       mac: mac,
       ephemeralPublicKey: ephemeralPublicKey,
       signatureBytes: signatureBytes,
+      signingPublicKey: signingPublicKey,
     );
   }
 
@@ -140,7 +167,8 @@ class EncryptedMessage {
     return 'EncryptedMessage(ciphertext: ${ciphertext.length} bytes, '
         'nonce: ${nonce.length} bytes, mac: ${mac.bytes.length} bytes, '
         'hasEphemeralKey: ${ephemeralPublicKey != null}, '
-        'hasSignature: ${signatureBytes != null})';
+        'hasSignature: ${signatureBytes != null}, '
+        'hasSigningKey: ${signingPublicKey != null})';
   }
 }
 

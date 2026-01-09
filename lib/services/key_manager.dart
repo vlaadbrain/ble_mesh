@@ -34,6 +34,12 @@ class KeyManager {
   // Store channel passwords for re-derivation
   final Map<String, String> _channelPasswords = {};
 
+  // Phase 3: Store peer public keys (received via key exchange)
+  final Map<String, List<int>> _peerPublicKeys = {};
+
+  // Callback for when a peer public key is received
+  void Function(String peerId, List<int> publicKey)? onPeerPublicKeyReceived;
+
   /// Initialize key manager and load/generate identity keys
   Future<void> initialize() async {
     // Try to load existing keys from secure storage
@@ -55,7 +61,7 @@ class KeyManager {
     }
   }
 
-  /// Get or create session keys for a peer
+  /// Get or create session keys for a peer (for encryption - generates ephemeral keys)
   Future<SessionKeys> getSessionKeys(
       String peerId, SimplePublicKey peerPublicKey) async {
     // Check if we have existing session keys
@@ -89,6 +95,32 @@ class KeyManager {
 
     _sessionKeys[peerId] = sessionKeys;
     return sessionKeys;
+  }
+
+  /// Derive shared secret using our identity DH key (for decryption)
+  ///
+  /// This is used when receiving a message - we use our identity DH private key
+  /// with the sender's ephemeral public key to derive the shared secret.
+  Future<SecretKey> deriveSharedSecretForDecryption(
+      SimplePublicKey senderEphemeralPublicKey) async {
+    if (_identityDhKeyPair == null) {
+      throw StateError('Identity DH keys not initialized');
+    }
+
+    final algorithm = X25519();
+
+    // Create a SimpleKeyPair from the identity DH key pair data
+    final identityKeyPair = SimpleKeyPairData(
+      _identityDhKeyPair!.bytes,
+      publicKey: await _identityDhKeyPair!.extractPublicKey(),
+      type: KeyPairType.x25519,
+    );
+
+    // Perform ECDH: our identity DH private + sender's ephemeral public
+    return await algorithm.sharedSecretKey(
+      keyPair: identityKeyPair,
+      remotePublicKey: senderEphemeralPublicKey,
+    );
   }
 
   /// Derive channel key from password
@@ -206,6 +238,45 @@ class KeyManager {
     _sessionKeys.clear();
     _channelKeys.clear();
     _channelPasswords.clear();
+    _peerPublicKeys.clear();
+  }
+
+  /// Phase 3: Store a peer's public key received via key exchange
+  ///
+  /// [peerId] - The ID of the peer
+  /// [publicKey] - The peer's public key bytes
+  void storePeerPublicKey(String peerId, List<int> publicKey) {
+    _peerPublicKeys[peerId] = List<int>.from(publicKey);
+
+    // Notify listeners that a new public key was received
+    onPeerPublicKeyReceived?.call(peerId, publicKey);
+  }
+
+  /// Phase 3: Get a peer's stored public key
+  ///
+  /// [peerId] - The ID of the peer
+  /// Returns the public key bytes or null if not found
+  List<int>? getPeerPublicKey(String peerId) {
+    return _peerPublicKeys[peerId];
+  }
+
+  /// Phase 3: Check if we have a public key for a peer
+  ///
+  /// [peerId] - The ID of the peer
+  bool hasPeerPublicKey(String peerId) {
+    return _peerPublicKeys.containsKey(peerId);
+  }
+
+  /// Phase 3: Remove a peer's public key (e.g., when peer disconnects)
+  ///
+  /// [peerId] - The ID of the peer
+  void removePeerPublicKey(String peerId) {
+    _peerPublicKeys.remove(peerId);
+  }
+
+  /// Phase 3: Get all stored peer public keys
+  Map<String, List<int>> getAllPeerPublicKeys() {
+    return Map<String, List<int>>.from(_peerPublicKeys);
   }
 }
 
