@@ -374,8 +374,8 @@ class BluetoothMeshService(private val context: Context) {
                     // Add to cache
                     messageCache.addMessage(message.senderId, message.messageId)
 
-                    // Send message to Flutter via callback
-                    Log.d(tag, "Forwarding message to Flutter: ${message.content}")
+                    // Send message to dart via callback
+                    Log.d(tag, "Platform stream message to Dart: ${message.content}")
                     onMessageReceived?.invoke(message)
 
                     // Phase 2: Forward message if TTL > 1
@@ -472,8 +472,8 @@ class BluetoothMeshService(private val context: Context) {
                         // Add to cache
                         messageCache.addMessage(message.senderId, message.messageId)
 
-                        // Send message to Flutter via callback
-                        Log.d(tag, "Forwarding message to Flutter: ${message.content}")
+                        // Send message to dart via callback
+                        Log.d(tag, "Platform stream message to dart: ${message.content}")
                         onMessageReceived?.invoke(message)
 
                         // Phase 2: Forward message if TTL > 1

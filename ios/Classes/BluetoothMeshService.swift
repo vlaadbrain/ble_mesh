@@ -388,8 +388,8 @@ class BluetoothMeshService {
                     // Add to cache
                     _ = self.messageCache.addMessage(senderId: message.senderId, messageId: message.messageId)
 
-                    // Send message to Flutter via callback
-                    print("[\(self.tag)] Forwarding message to Flutter: \(message.content)")
+                    // Send message to dart via callback
+                    print("[\(self.tag)] Platform forwarding message to Dart: \(message.content)")
                     self.onMessageReceived?(message)
 
                     // Phase 2: Forward message if TTL > 1
