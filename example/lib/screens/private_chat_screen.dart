@@ -26,17 +26,52 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
   StreamSubscription<Message>? _messageSubscription;
   bool _isSending = false;
 
+  // Track peer state locally so we can update when key exchange completes
+  late Peer _peer;
+  // Store original callback to restore on dispose
+  void Function(String peerId, List<int> publicKey)? _originalKeyCallback;
+
   @override
   void initState() {
     super.initState();
+    _peer = widget.peer;
+    _setupKeyExchangeListener();
     _listenToMessages();
+  }
+
+  void _setupKeyExchangeListener() {
+    // Store original callback to restore later
+    _originalKeyCallback = widget.bleMesh.onPeerPublicKeyReceived;
+
+    // Set up our listener that chains to the original
+    widget.bleMesh.onPeerPublicKeyReceived = (peerId, publicKey) {
+      // Call original callback first (for home screen updates)
+      _originalKeyCallback?.call(peerId, publicKey);
+
+      // Update our local peer if it's the one we're chatting with
+      if (peerId == _peer.id && mounted) {
+        setState(() {
+          _peer = Peer(
+            id: _peer.id,
+            nickname: _peer.nickname,
+            rssi: _peer.rssi,
+            lastSeen: _peer.lastSeen,
+            isConnected: _peer.isConnected,
+            hopCount: _peer.hopCount,
+            lastForwardTime: _peer.lastForwardTime,
+            publicKey: publicKey,
+          );
+        });
+        _showSnackBar('Encryption key received! You can now send private messages.');
+      }
+    };
   }
 
   void _listenToMessages() {
     _messageSubscription = widget.bleMesh.messageStream.listen((message) {
       // Only show messages from this peer or sent to this peer
       if (message.type == MessageType.private &&
-          (message.senderId == widget.peer.id ||
+          (message.senderId == _peer.id ||
               message.senderId == 'self')) {
         setState(() {
           _messages.add(message);
@@ -64,13 +99,18 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
     final text = _messageController.text.trim();
     if (text.isEmpty || _isSending) return;
 
+    // Check if peer has public key
+    if (_peer.publicKey == null || _peer.publicKey!.isEmpty) {
+      _showKeyExchangeDialog();
+      return;
+    }
+
     setState(() {
       _isSending = true;
     });
 
     try {
-      // Note: This will throw UnimplementedError until platform code is ready
-      await widget.bleMesh.sendPrivateMessage(widget.peer.id, text);
+      await widget.bleMesh.sendPrivateMessage(_peer.id, text);
 
       // Add own message to the list
       final messageId = DateTime.now().millisecondsSinceEpoch.toString();
@@ -123,6 +163,58 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
     }
   }
 
+  /// Show dialog explaining we're waiting for peer's key
+  void _showKeyExchangeDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.hourglass_empty, color: Colors.orange),
+            SizedBox(width: 8),
+            Text('Waiting for Key'),
+          ],
+        ),
+        content: Text(
+          'You haven\'t received ${_peer.nickname}\'s encryption key yet.\n\n'
+          'Ask them to share their public key with you, or share yours first to prompt them.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton.icon(
+            onPressed: () async {
+              Navigator.pop(context);
+              await _sharePublicKey();
+            },
+            icon: const Icon(Icons.vpn_key),
+            label: const Text('Share My Key'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green,
+              foregroundColor: Colors.white,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Share public key with the peer
+  Future<void> _sharePublicKey() async {
+    try {
+      _showSnackBar('Sharing encryption key with ${_peer.nickname}...');
+
+      final publicKey = await widget.bleMesh.getPublicKey();
+      await widget.bleMesh.sharePublicKey(peerId: _peer.id, publicKey: publicKey);
+
+      _showSnackBar('Encryption key shared! Ask ${_peer.nickname} to share their key too.');
+    } catch (e) {
+      _showSnackBar('Failed to share key: $e');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -135,7 +227,7 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(widget.peer.nickname),
+                  Text(_peer.nickname),
                   Text(
                     'End-to-end encrypted',
                     style: TextStyle(
@@ -194,7 +286,7 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'Messages are end-to-end encrypted with ${widget.peer.nickname}',
+                    'Messages are end-to-end encrypted with ${_peer.nickname}',
                     style: TextStyle(
                       fontSize: 12,
                       color: Colors.green.shade900,
@@ -453,6 +545,8 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
 
   @override
   void dispose() {
+    // Restore original callback
+    widget.bleMesh.onPeerPublicKeyReceived = _originalKeyCallback;
     _messageSubscription?.cancel();
     _messageController.dispose();
     _scrollController.dispose();

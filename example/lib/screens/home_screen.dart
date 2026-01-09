@@ -16,7 +16,6 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final BleMesh _bleMesh = BleMesh();
-  final bool _encryptionEnabled = true; // Phase 3: Track encryption status
   String _nickname = 'Anonymous';
   bool _isMeshStarted = false;
   bool _isInitialized = false;
@@ -127,7 +126,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _startListeningToPeers() {
     // Listen to peer connections
-    _bleMesh.peerConnectedStream.listen((peer) async {
+    _bleMesh.peerConnectedStream.listen((peer) {
       setState(() {
         if (!_connectedPeers.any((p) => p.id == peer.id)) {
           _connectedPeers.add(peer);
@@ -135,17 +134,6 @@ class _HomeScreenState extends State<HomeScreen> {
         _statusMessage = 'Connected to ${_connectedPeers.length} peer(s)';
       });
       _showSnackBar('Peer connected: ${peer.nickname}');
-
-      // Phase 3: Automatically exchange public keys when a peer connects
-      if (_encryptionEnabled) {
-        try {
-          final publicKey = await _bleMesh.getPublicKey();
-          await _bleMesh.sharePublicKey(peerId: peer.id, publicKey: publicKey);
-          debugPrint('Shared public key with ${peer.nickname}');
-        } catch (e) {
-          debugPrint('Error sharing public key: $e');
-        }
-      }
     });
 
     // Listen to peer disconnections
@@ -157,6 +145,49 @@ class _HomeScreenState extends State<HomeScreen> {
             : 'Connected to ${_connectedPeers.length} peer(s)';
       });
       _showSnackBar('Peer disconnected: ${peer.nickname}');
+    });
+
+    // Listen for public key received events
+    _bleMesh.onPeerPublicKeyReceived = (peerId, publicKey) {
+      // Update the peer in our list with the new public key
+      setState(() {
+        final index = _connectedPeers.indexWhere((p) => p.id == peerId);
+        if (index != -1) {
+          final peer = _connectedPeers[index];
+          _connectedPeers[index] = Peer(
+            id: peer.id,
+            nickname: peer.nickname,
+            rssi: peer.rssi,
+            lastSeen: peer.lastSeen,
+            isConnected: peer.isConnected,
+            hopCount: peer.hopCount,
+            lastForwardTime: peer.lastForwardTime,
+            publicKey: publicKey,
+          );
+        }
+      });
+      // Find peer nickname for the snackbar
+      final peer = _connectedPeers.firstWhere(
+        (p) => p.id == peerId,
+        orElse: () => Peer(
+          id: peerId,
+          nickname: 'Unknown',
+          rssi: 0,
+          lastSeen: DateTime.now(),
+          isConnected: true,
+        ),
+      );
+      _showSnackBar('🔑 Received encryption key from ${peer.nickname}');
+    };
+
+    // Also listen to message stream to process incoming public keys
+    _bleMesh.messageStream.listen((message) {
+      // The messageStream already handles public key messages internally
+      // This listener ensures the stream is active for key exchange
+      if (message.type == MessageType.system) {
+        // System messages are handled internally by BleMesh
+        debugPrint('System message received: ${message.content}');
+      }
     });
   }
 
@@ -215,6 +246,8 @@ class _HomeScreenState extends State<HomeScreen> {
             itemCount: _connectedPeers.length,
             itemBuilder: (context, index) {
               final peer = _connectedPeers[index];
+              final hasPublicKey = peer.publicKey != null && peer.publicKey!.isNotEmpty;
+
               return ListTile(
                 leading: CircleAvatar(
                   backgroundColor: Colors.green.shade200,
@@ -225,8 +258,41 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
                 title: Text(peer.nickname),
-                subtitle: Text('RSSI: ${peer.rssi} dBm'),
-                trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('RSSI: ${peer.rssi} dBm'),
+                    if (hasPublicKey)
+                      const Row(
+                        children: [
+                          Icon(Icons.verified_user, size: 14, color: Colors.green),
+                          SizedBox(width: 4),
+                          Text('Key exchanged', style: TextStyle(fontSize: 12, color: Colors.green)),
+                        ],
+                      )
+                    else
+                      const Row(
+                        children: [
+                          Icon(Icons.warning, size: 14, color: Colors.orange),
+                          SizedBox(width: 4),
+                          Text('No key', style: TextStyle(fontSize: 12, color: Colors.orange)),
+                        ],
+                      ),
+                  ],
+                ),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (!hasPublicKey)
+                      IconButton(
+                        icon: const Icon(Icons.vpn_key, size: 20),
+                        tooltip: 'Share encryption key',
+                        onPressed: () => _sharePublicKeyWithPeer(peer),
+                      ),
+                    const Icon(Icons.arrow_forward_ios, size: 16),
+                  ],
+                ),
                 onTap: () {
                   Navigator.pop(context);
                   _openPrivateChat(peer);
@@ -256,6 +322,25 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ),
     );
+  }
+
+  /// Phase 3: Manually share public key with a peer
+  Future<void> _sharePublicKeyWithPeer(Peer peer) async {
+    try {
+      _showSnackBar('Sharing encryption key with ${peer.nickname}...');
+
+      final publicKey = await _bleMesh.getPublicKey();
+      await _bleMesh.sharePublicKey(peerId: peer.id, publicKey: publicKey);
+
+      _showSnackBar('Encryption key shared with ${peer.nickname}');
+
+      // Update UI to reflect key exchange
+      setState(() {
+        // The peer list will be updated when we receive their key
+      });
+    } catch (e) {
+      _showSnackBar('Failed to share key: $e');
+    }
   }
 
   void _navigateToMeshEvents() {
